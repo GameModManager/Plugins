@@ -5,6 +5,7 @@
  * - Identity: steam_appid=489830, nexus_domain=skyrimspecialedition
  * - Order encoding: plugins.txt writer
  * - Capabilities: plugins (plugins.txt + BSAs), archives (BSAs), downloads (Nexus)
+ * - Tools: LOOT (advisory — sorted plugin list feeds into load order)
  */
 
 #include "gmm_abi_v1.h"
@@ -77,6 +78,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "nxm",
         "nexusmods.com",
         "nexus"
+    );
+
+    /* Register LOOT as an advisory tool — output feeds into load order */
+    ctx->register_tool(ctx,
+        "loot",
+        "advisory",
+        NULL,           /* invoke_fn — detected and invoked by engine at runtime */
+        NULL            /* user_data */
     );
 }
 
