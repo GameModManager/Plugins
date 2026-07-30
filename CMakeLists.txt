@@ -49,3 +49,8 @@ set_target_properties(IsaacModSorter PROPERTIES
     PREFIX ""
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
 )
+
+# ImageDiff — generic sprite conflict merge tool (non-game-specific)
+add_game_plugin(ImageDiff
+    Tools/ImageDiff/ImageDiff.cpp
+)

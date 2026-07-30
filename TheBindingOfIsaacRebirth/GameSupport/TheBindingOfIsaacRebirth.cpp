@@ -7,7 +7,9 @@
  *
  * Game-dependent features registered via hooks:
  *   - conflict_extensions: .png, .anm2, .wav, .lua
- *   - ignored_files: .git, __pycache__, metadata.xml, disable.it
+ *   - ignored_files: .git, __pycache__, metadata.xml, disable.it, .DS_Store,
+ *                     Thumbs.db, desktop.ini, .Trashes, .Spotlight-V100,
+ *                     $RECYCLE.BIN, .directory, ~
  *   - disable_mechanism: disable.it
  *   - workshop_id_pattern: _(\d+)$
  *   - auto_sort_groups: framework(0), libraries(10), content(20), tweaks(30),
@@ -29,7 +31,7 @@ static const char* NEXUS_DOMAIN = "thebindingofisaacrebirth";
 static const char* CONFLICT_EXTENSIONS = ".png,.anm2,.wav,.lua";
 
 /* -- Files to ignore during conflict scanning -- */
-static const char* IGNORED_FILES = ".git,__pycache__,metadata.xml,disable.it";
+static const char* IGNORED_FILES = ".git,__pycache__,metadata.xml,disable.it,.DS_Store,Thumbs.db,desktop.ini,.Trashes,.Spotlight-V100,$RECYCLE.BIN,.directory,~";
 
 /* -- Workshop ID extraction pattern: folder names end with _<digits> -- */
 static const char* WORKSHOP_ID_PATTERN = "_(\\d+)$";
@@ -309,6 +311,13 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_hook(ctx,
         "conflict_order_reversed",
         "true",
+        NULL, 0, NULL);
+
+    /* Conflict scan dirs — Isaac mods only conflict in these subdirectories;
+     * anything outside is not read by the game engine. */
+    ctx->register_hook(ctx,
+        "conflict_scan_dirs",
+        "resources,resources-dlc3",
         NULL, 0, NULL);
 }
 
