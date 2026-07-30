@@ -23,7 +23,7 @@
 
 /* ── Identity ── */
 static const uint32_t STEAM_APPID = 250900;
-static const char* NEXUS_DOMAIN = "isaac";
+static const char* NEXUS_DOMAIN = "thebindingofisaacrebirth";
 
 /* ── Isaac conflict-relevant file extensions ── */
 static const char* CONFLICT_EXTENSIONS = ".png,.anm2,.wav,.lua";
@@ -116,6 +116,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL,           /* gog_id */
         NULL,           /* epic_namespace */
         NEXUS_DOMAIN,
+        "The Binding of Isaac: Rebirth",
         NULL,           /* exe_windows */
         NULL,           /* exe_linux */
         NULL            /* exe_macos */
@@ -124,25 +125,41 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     /* Register order encoding hook — metadata.xml format */
     ctx->register_order_encoding(ctx, isaac_order_encoding);
 
-    /* Register capabilities — Isaac uses mods folder + downloads */
-    ctx->register_capability(ctx,
+    /* Register tabs */
+    ctx->register_tab(ctx,
         "mods",
         "Mods",
         "mods/",
         "Isaac mod folders (rename to reorder, disable.it to toggle)",
         NULL,
         NULL,
+        NULL,
+        NULL,
         NULL
     );
 
-    ctx->register_capability(ctx,
+    ctx->register_tab(ctx,
         "downloads",
         "Downloads",
         "mods/",
         "Download mods from Steam Workshop or Nexus Mods",
         "nxm",
         "nexusmods.com",
-        "nexus"
+        "nexus",
+        NULL,
+        NULL
+    );
+
+    ctx->register_tab(ctx,
+        "conflicts",
+        "Conflicts",
+        "mods/",
+        "File conflicts between installed mods",
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        "data"
     );
 
     /* ── Game-dependent hooks ── */
@@ -225,6 +242,22 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "mods",
         NULL, 0, NULL);
 
+    /* Deploy prefix — game-relative path prefix for deployed mod files.
+     * Mod content inside staging_dir gets placed under this subpath.
+     * Isaac deploys to "mods" (game_dir/mods/ModName/...). */
+    ctx->register_hook(ctx,
+        "deploy_prefix",
+        "mods",
+        NULL, 0, NULL);
+
+    /* Deploy include mod id — whether to include the mod folder name in the
+     * deploy target path. Isaac mods go into mods/ModName/ (true).
+     * Skyrim-style mods go directly into Data/ (false, default). */
+    ctx->register_hook(ctx,
+        "deploy_include_mod_id",
+        "true",
+        NULL, 0, NULL);
+
     /* Game versions — Isaac version string → release date */
     ctx->register_hook(ctx,
         "game_versions",
@@ -254,6 +287,19 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_hook(ctx,
         "steam_appid",
         "250900",
+        NULL, 0, NULL);
+
+    /* Download sources — comma-separated list of source names for status bar */
+    ctx->register_hook(ctx,
+        "download_sources",
+        "Nexus,Steam",
+        NULL, 0, NULL);
+
+    /* Mod counter label — how to label the mod count in status bar.
+     * "Mods" = raw mod folders, "Plugins" = ESM/ESP-style plugins. */
+    ctx->register_hook(ctx,
+        "mod_counter_label",
+        "Mods",
         NULL, 0, NULL);
 
     /* Conflict order reversed — Isaac resolves conflicts top-to-bottom:

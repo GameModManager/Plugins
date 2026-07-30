@@ -22,5 +22,30 @@ function(add_game_plugin NAME SOURCE)
     )
 endfunction()
 
-add_game_plugin(skyrimse skyrimse/skyrimse.cpp)
-add_game_plugin(isaac isaac/isaac.cpp)
+# ── Game Support Plugins ──
+
+add_game_plugin(SkyrimSpecialEdition
+    SkyrimSpecialEdition/GameSupport/SkyrimSpecialEdition.cpp
+)
+
+add_game_plugin(TheBindingOfIsaacRebirth
+    TheBindingOfIsaacRebirth/GameSupport/TheBindingOfIsaacRebirth.cpp
+)
+
+# ── Tool Plugins ──
+
+# Isaac Mod Sorter — separate from the game recognition plugin
+add_library(IsaacModSorter MODULE
+    TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorter.cpp
+    TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorterProvider.cpp
+    TheBindingOfIsaacRebirth/Tools/ModSorter/AutoSorter.cpp
+)
+target_include_directories(IsaacModSorter PRIVATE
+    ${ABI_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine/sort
+)
+target_compile_definitions(IsaacModSorter PRIVATE VERSION="0.1.0")
+set_target_properties(IsaacModSorter PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+)
