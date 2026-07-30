@@ -22,7 +22,7 @@ function(add_game_plugin NAME SOURCE)
     )
 endfunction()
 
-# ── Game Support Plugins ──
+# -- Game Support Plugins --
 
 add_game_plugin(SkyrimSpecialEdition
     SkyrimSpecialEdition/GameSupport/SkyrimSpecialEdition.cpp
@@ -32,7 +32,7 @@ add_game_plugin(TheBindingOfIsaacRebirth
     TheBindingOfIsaacRebirth/GameSupport/TheBindingOfIsaacRebirth.cpp
 )
 
-# ── Tool Plugins ──
+# -- Tool Plugins --
 
 # Isaac Mod Sorter — separate from the game recognition plugin
 add_library(IsaacModSorter MODULE

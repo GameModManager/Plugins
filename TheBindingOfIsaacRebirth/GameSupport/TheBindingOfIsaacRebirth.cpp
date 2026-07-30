@@ -21,32 +21,32 @@
 #include <cstdio>
 #include <cstring>
 
-/* ── Identity ── */
+/* -- Identity -- */
 static const uint32_t STEAM_APPID = 250900;
 static const char* NEXUS_DOMAIN = "thebindingofisaacrebirth";
 
-/* ── Isaac conflict-relevant file extensions ── */
+/* -- Isaac conflict-relevant file extensions -- */
 static const char* CONFLICT_EXTENSIONS = ".png,.anm2,.wav,.lua";
 
-/* ── Files to ignore during conflict scanning ── */
+/* -- Files to ignore during conflict scanning -- */
 static const char* IGNORED_FILES = ".git,__pycache__,metadata.xml,disable.it";
 
-/* ── Workshop ID extraction pattern: folder names end with _<digits> ── */
+/* -- Workshop ID extraction pattern: folder names end with _<digits> -- */
 static const char* WORKSHOP_ID_PATTERN = "_(\\d+)$";
 
-/* ── Disable mechanism filename ── */
+/* -- Disable mechanism filename -- */
 static const char* DISABLE_MECHANISM = "disable.it";
 
-/* ── Metadata format: Isaac uses metadata.xml with <name> and <version> tags ── */
+/* -- Metadata format: Isaac uses metadata.xml with <name> and <version> tags -- */
 static const char* METADATA_FILE = "metadata.xml";
 static const char* METADATA_NAME_TAG = "name";
 static const char* METADATA_VERSION_TAG = "version";
 
-/* ── Priority encoding: NNN prefix in <name> tag (e.g. "001 My Mod") ── */
+/* -- Priority encoding: NNN prefix in <name> tag (e.g. "001 My Mod") -- */
 static const char* PRIORITY_PREFIX_RE = "^[^a-zA-Z]+";
 static const char* PRIORITY_FORMAT = "%03d ";
 
-/* ── Auto-sort group definitions (name:priority) ──
+/* -- Auto-sort group definitions (name:priority) --
  * Lower priority number = loads earlier. Groups are sorted by priority,
  * then topological sort within each group by before/after constraints.
  *
@@ -69,7 +69,7 @@ static const char* AUTO_SORT_GROUPS =
     "{\"name\":\"unknown\",\"priority\":99}"
     "]";
 
-/* ── Game versions: Isaac version string → release date ── */
+/* -- Game versions: Isaac version string → release date -- */
 static const char* GAME_VERSIONS =
     "{"
     "\"1.9.716\":\"2026-04-11\","
@@ -84,7 +84,7 @@ static const char* GAME_VERSIONS =
     "\"1.7.9\":\"2022-12-08\""
     "}";
 
-/* ── Order encoding: writes metadata.xml (Isaac's load order format) ──
+/* -- Order encoding: writes metadata.xml (Isaac's load order format) --
  * Isaac determines load order from the mods folder itself (alphabetical/
  * renamed order), but metadata.xml is also written so external tools and
  * the "Apply Sort Order" feature can persist the intended priority.
@@ -108,7 +108,7 @@ static int isaac_order_encoding(const char* const* ordered_mod_ids,
     return 1;
 }
 
-/* ── Registration entry point ── */
+/* -- Registration entry point -- */
 extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     /* Register identity — Isaac: Rebirth (Steam appid 250900) */
     ctx->register_identity(ctx,
@@ -162,7 +162,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "data"
     );
 
-    /* ── Game-dependent hooks ── */
+    /* -- Game-dependent hooks -- */
 
     /* Conflict extensions — Isaac's asset/script formats */
     ctx->register_hook(ctx,
@@ -312,7 +312,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL, 0, NULL);
 }
 
-/* ── Version guard ── */
+/* -- Version guard -- */
 extern "C" uint32_t gmm_abi_version(void) {
     return GMM_ABI_VERSION;
 }

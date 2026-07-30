@@ -7,7 +7,7 @@
 
 namespace engine {
 
-// ── Workshop ID extraction ──
+// -- Workshop ID extraction --
 
 int64_t IsaacAutoSorter::extract_workshop_id(const std::string& folder_name) {
     static const std::regex re(R"(_(\d+)$)");
@@ -18,7 +18,7 @@ int64_t IsaacAutoSorter::extract_workshop_id(const std::string& folder_name) {
     return 0;
 }
 
-// ── YAML parsing ──
+// -- YAML parsing --
 
 static std::vector<int64_t> yaml_to_int_list(const YAML::Node& node) {
     std::vector<int64_t> result;
@@ -78,7 +78,7 @@ void IsaacAutoSorter::parse_masterlist_yaml(
     }
 }
 
-// ── Public interface ──
+// -- Public interface --
 
 void IsaacAutoSorter::load_masterlist(const std::string& yaml_text) {
     YAML::Node root = YAML::Load(yaml_text);
@@ -167,7 +167,7 @@ std::vector<MasterlistTag> IsaacAutoSorter::evaluate_tags(
     return result;
 }
 
-// ── Mod matching ──
+// -- Mod matching --
 
 const IsaacModEntry* IsaacAutoSorter::match_mod(const IsaacSortModInfo& mod) const {
     // 1. Workshop ID match (user entries override)
@@ -213,7 +213,7 @@ const IsaacModEntry* IsaacAutoSorter::match_mod(const IsaacSortModInfo& mod) con
     return nullptr;
 }
 
-// ── Topological sort ──
+// -- Topological sort --
 
 std::vector<std::string> IsaacAutoSorter::topological_sort(
         const std::vector<IsaacSortModInfo>& group_mods,
@@ -291,7 +291,7 @@ std::vector<std::string> IsaacAutoSorter::topological_sort(
     return out;
 }
 
-// ── Main sort ──
+// -- Main sort --
 
 std::vector<std::string> IsaacAutoSorter::auto_sort(
         const std::vector<IsaacSortModInfo>& mods) const {

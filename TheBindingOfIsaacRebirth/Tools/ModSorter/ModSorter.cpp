@@ -14,7 +14,7 @@
 
 static std::unique_ptr<engine::IsaacSortProvider> g_provider;
 
-/* ── C ABI sort function called by the engine ── */
+/* -- C ABI sort function called by the engine -- */
 static const char* const* isaac_sort(const char* const* mod_folders,
                                       size_t count,
                                       void* user_data) {
@@ -51,7 +51,7 @@ static const char* const* isaac_sort(const char* const* mod_folders,
     return output.data();
 }
 
-/* ── Plugin entry point ── */
+/* -- Plugin entry point -- */
 extern "C" uint32_t gmm_abi_version(void) {
     return GMM_ABI_VERSION;
 }

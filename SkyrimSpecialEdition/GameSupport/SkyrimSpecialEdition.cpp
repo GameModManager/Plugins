@@ -13,11 +13,11 @@
 #include <cstdio>
 #include <cstring>
 
-/* ── Identity ── */
+/* -- Identity -- */
 static const uint32_t SKYRIM_SE_APPID = 489830;
 static const char* NEXUS_DOMAIN = "skyrimspecialedition";
 
-/* ── Order encoding: writes plugins.txt ── */
+/* -- Order encoding: writes plugins.txt -- */
 static int skyrim_order_encoding(const char* const* ordered_mod_ids,
                                  size_t count,
                                  const char* output_path,
@@ -33,7 +33,7 @@ static int skyrim_order_encoding(const char* const* ordered_mod_ids,
     return 1;
 }
 
-/* ── Registration entry point ── */
+/* -- Registration entry point -- */
 extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     /* Register identity */
     ctx->register_identity(ctx,
@@ -164,7 +164,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     );
 }
 
-/* ── Version guard ── */
+/* -- Version guard -- */
 extern "C" uint32_t gmm_abi_version(void) {
     return GMM_ABI_VERSION;
 }
