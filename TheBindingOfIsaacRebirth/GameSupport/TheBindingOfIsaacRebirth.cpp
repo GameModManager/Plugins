@@ -277,12 +277,6 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "REPENTOGONLauncher/REPENTOGONLauncher.exe,isaac-ng.exe",
         NULL, 0, NULL);
 
-    /* Default executable — REPENTOGON mod launcher provides modding APIs. */
-    ctx->register_hook(ctx,
-        "default_executable",
-        "REPENTOGONLauncher/REPENTOGONLauncher.exe",
-        NULL, 0, NULL);
-
     /* Steam appid — used by ProtonRuntime to find the correct per-game
      * Proton version from Steam's config.vdf. Also used by platform
      * detection to find the game's Steam install directory. */

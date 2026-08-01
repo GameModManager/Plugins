@@ -143,11 +143,6 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "SkyrimSE.exe,SkyrimSELauncher.exe,skse64_loader.exe",
         NULL, 0, NULL);
 
-    ctx->register_hook(ctx,
-        "default_executable",
-        "skse64_loader.exe",
-        NULL, 0, NULL);
-
     /* Steam appid — used by ProtonRuntime to find the right Proton version.
      * Also used by platform detection to find the game's Steam install dir. */
     ctx->register_hook(ctx,
