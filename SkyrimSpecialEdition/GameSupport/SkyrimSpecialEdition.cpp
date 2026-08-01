@@ -47,6 +47,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL            /* exe_macos — not supported */
     );
 
+    /* Optional metadata for the Plugins settings tab */
+    if (ctx->register_meta) {
+        ctx->register_meta(ctx,
+            "GameModManager Team",
+            "0.1.0",
+            "Skyrim Special Edition game support (plugins.txt load order, Data/ layout)");
+    }
+
     /* Register order encoding hook */
     ctx->register_order_encoding(ctx, skyrim_order_encoding);
 

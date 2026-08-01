@@ -124,6 +124,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL            /* exe_macos */
     );
 
+    /* Optional metadata for the Plugins settings tab */
+    if (ctx->register_meta) {
+        ctx->register_meta(ctx,
+            "GameModManager Team",
+            "0.1.0",
+            "The Binding of Isaac: Rebirth game support (metadata.xml load order, resources/ layout)");
+    }
+
     /* Register order encoding hook — metadata.xml format */
     ctx->register_order_encoding(ctx, isaac_order_encoding);
 
