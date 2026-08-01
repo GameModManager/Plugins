@@ -93,4 +93,19 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     if (ctx->register_category) {
         ctx->register_category(ctx, "Tool");
     }
+
+    // User-facing options (key:value pairs, rendered as editable rows in the
+    // Plugins settings tab). Empty values = engine falls back to defaults.
+    if (ctx->register_settings) {
+        static const char* settings_keys[] = {
+            "masterlist_url",    // remote masterlist to fetch; empty = bundled
+            "auto_sort_on_load", // "1" = run the sort when mods load
+        };
+        static const char* settings_values[] = {
+            "",
+            "1",
+        };
+        ctx->register_settings(ctx, settings_keys, settings_values,
+                               sizeof(settings_keys) / sizeof(settings_keys[0]));
+    }
 }
