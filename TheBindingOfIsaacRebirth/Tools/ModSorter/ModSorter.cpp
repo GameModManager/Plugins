@@ -90,4 +90,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         ctx->register_meta(ctx, "GameModManager Team", "0.1.0",
                            "LOOT-style mod sorter for The Binding of Isaac: Rebirth");
     }
+    if (ctx->register_category) {
+        ctx->register_category(ctx, "Tool");
+    }
 }

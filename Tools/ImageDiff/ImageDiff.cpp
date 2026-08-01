@@ -63,6 +63,9 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         ctx->register_meta(ctx, "GameModManager Team", "0.1.0",
                            "Image diff tool for merging conflicting sprite files");
     }
+    if (ctx->register_category) {
+        ctx->register_category(ctx, "Tool");
+    }
 }
 
 /* -- Version guard -- */

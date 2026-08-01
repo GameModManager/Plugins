@@ -54,6 +54,9 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
             "0.1.0",
             "Skyrim Special Edition game support (plugins.txt load order, Data/ layout)");
     }
+    if (ctx->register_category) {
+        ctx->register_category(ctx, "Game Support");
+    }
 
     /* Register order encoding hook */
     ctx->register_order_encoding(ctx, skyrim_order_encoding);
