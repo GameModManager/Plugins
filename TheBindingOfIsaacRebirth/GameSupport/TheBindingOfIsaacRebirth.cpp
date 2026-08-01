@@ -319,6 +319,13 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "conflict_scan_dirs",
         "resources,resources-dlc3",
         NULL, 0, NULL);
+
+    /* Uses merged pseudo-mod — only Isaac pins the __merged__ row in the mod
+     * list (merge-tool output landing zone). Other games don't use it. */
+    ctx->register_hook(ctx,
+        "uses_merged",
+        "true",
+        NULL, 0, NULL);
 }
 
 /* -- Version guard -- */
