@@ -148,6 +148,16 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "Data",
         NULL, 0, NULL);
 
+    /* Plugin support: %LOCALAPPDATA%/<localappdata_folder>/Plugins.txt lives
+     * under the Proton prefix's users/<user>/AppData/Local. Required for
+     * write_plugins_txt_for_launch() to resolve the target; without it the
+     * launch-time Plugins.txt write is skipped and the game keeps the stale
+     * file (mods never get the '*' enable prefix). */
+    ctx->register_hook(ctx,
+        "localappdata_folder",
+        "Skyrim Special Edition",
+        NULL, 0, NULL);
+
     /* Executables — relative to the game install root */
     ctx->register_hook(ctx,
         "executables",
