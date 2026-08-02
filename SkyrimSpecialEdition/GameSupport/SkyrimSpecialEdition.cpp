@@ -136,10 +136,12 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL, 0, NULL);
 
     /* Game-native plugins — vanilla ESMs that ship with the game.
-     * These appear as unmanaged mods in the list (cannot be removed/reordered). */
+     * These appear as unmanaged mods in the list (cannot be removed/reordered).
+     * _ResourcePack.esl is Bethesda's resource pack, part of the same fixed
+     * band (MO2 lists it as "Creation Club: _ResourcePack"). */
     ctx->register_hook(ctx,
         "game_native_plugins",
-        "Skyrim.esm,Update.esm,Dawnguard.esm,HearthFires.esm,Dragonborn.esm",
+        "Skyrim.esm,Update.esm,Dawnguard.esm,HearthFires.esm,Dragonborn.esm,_ResourcePack.esl",
         NULL, 0, NULL);
 
     /* Mods subpath — Skyrim stores its plugins in Data/ relative to the game root */
