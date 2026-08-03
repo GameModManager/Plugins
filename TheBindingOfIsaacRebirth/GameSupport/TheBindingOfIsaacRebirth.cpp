@@ -119,7 +119,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL,           /* epic_namespace */
         NEXUS_DOMAIN,
         "The Binding of Isaac: Rebirth",
-        NULL,           /* exe_windows */
+        "isaac-ng.exe",           /* exe_windows */
         NULL,           /* exe_linux */
         NULL            /* exe_macos */
     );
