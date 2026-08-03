@@ -150,6 +150,15 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "Data",
         NULL, 0, NULL);
 
+    /* Case-insensitive game (Windows filesystem): the deploy layer must merge
+     * CI-equal paths (e.g. Meshes/ vs meshes/) into one canonical casing when
+     * building the overlay staging tree, or the case-sensitive mount splits a
+     * mod across two dirs and the game reads a half-populated mod. */
+    ctx->register_hook(ctx,
+        "case_sensitive",
+        "false",
+        NULL, 0, NULL);
+
     /* Plugin support: %LOCALAPPDATA%/<localappdata_folder>/Plugins.txt lives
      * under the Proton prefix's users/<user>/AppData/Local. Required for
      * write_plugins_txt_for_launch() to resolve the target; without it the
