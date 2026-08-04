@@ -32,6 +32,21 @@ add_game_plugin(TheBindingOfIsaacRebirth
     TheBindingOfIsaacRebirth/GameSupport/TheBindingOfIsaacRebirth.cpp
 )
 
+# -- Game Support data ----------------------------------------------------
+# Ship each game's recommended wine packages (wine.json) alongside its plugin
+# at <plugins>/<game_id>/wine.json. The runtime resolves it as
+# <plugin .so dir>/<game_id>/wine.json (game_id matches the plugin folder).
+foreach(GAME_DIR SkyrimSpecialEdition TheBindingOfIsaacRebirth)
+    set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/${GAME_DIR}/GameSupport/wine.json")
+    if(EXISTS "${WINE_JSON}")
+        configure_file(
+            "${WINE_JSON}"
+            "${CMAKE_BINARY_DIR}/plugins/${GAME_DIR}/wine.json"
+            COPYONLY
+        )
+    endif()
+endforeach()
+
 # -- Tool Plugins --
 
 # Isaac Mod Sorter — separate from the game recognition plugin

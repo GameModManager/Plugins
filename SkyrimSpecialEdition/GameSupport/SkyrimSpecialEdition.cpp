@@ -189,6 +189,18 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         NULL,           /* invoke_fn — detected and invoked by engine at runtime */
         NULL            /* user_data */
     );
+
+    /* LOOT identity — LOOT game slug + masterlist repo (PLAN.md §7.1). The
+     * engine LootSorter builds its gmm_lootcli request from these. */
+    ctx->register_hook(ctx,
+        "loot_game_id",
+        "skyrimse",
+        NULL, 0, NULL);
+
+    ctx->register_hook(ctx,
+        "loot_masterlist_repo",
+        "skyrimse",
+        NULL, 0, NULL);
 }
 
 /* -- Version guard -- */
