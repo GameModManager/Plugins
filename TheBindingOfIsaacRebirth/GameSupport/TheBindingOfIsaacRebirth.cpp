@@ -325,6 +325,15 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "resources,resources-dlc3",
         NULL, 0, NULL);
 
+    /* Content-validity markers: top-level folders that count as real Isaac
+     * mod data. A mod folder without resources/, resources-dlc3/ - and without
+     * metadata.xml (handled by the engine's metadata-presence rule) - is
+     * flagged "No valid game data" in the mod list. */
+    ctx->register_hook(ctx,
+        "mod_valid_dirs",
+        "resources,resources-dlc3",
+        NULL, 0, NULL);
+
     /* Uses merged pseudo-mod — only Isaac pins the __merged__ row in the mod
      * list (merge-tool output landing zone). Other games don't use it. */
     ctx->register_hook(ctx,

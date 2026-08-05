@@ -150,6 +150,20 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "Data",
         NULL, 0, NULL);
 
+    /* Content-validity markers (MO2's GamebryoModDataChecker allow-sets):
+     * top-level folder names and file extensions that count as real game data.
+     * A mod folder with none of these - and no meta.ini - is flagged "No valid
+     * game data" in the mod list (MO2's FLAG_INVALID). Mirrors
+     * gamebryomoddatachecker.cpp possibleFolderNames()/possibleFileExtensions(). */
+    ctx->register_hook(ctx,
+        "mod_valid_dirs",
+        "fonts,interface,menus,meshes,music,scripts,shaders,sound,strings,textures,trees,video,facegen,materials,skse,obse,mwse,nvse,fose,f4se,distantlod,asi,SkyProc Patchers,Tools,MCM,icons,bookart,distantland,mits,splash,dllplugins,CalienteTools,NetScriptFramework,shadersfx",
+        NULL, 0, NULL);
+    ctx->register_hook(ctx,
+        "mod_valid_exts",
+        "esp,esm,esl,bsa,ba2,modgroups,ini",
+        NULL, 0, NULL);
+
     /* Case-insensitive game (Windows filesystem): the deploy layer must merge
      * CI-equal paths (e.g. Meshes/ vs meshes/) into one canonical casing when
      * building the overlay staging tree, or the case-sensitive mount splits a
