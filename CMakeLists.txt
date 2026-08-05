@@ -14,7 +14,7 @@ set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../abi/include")
 function(add_game_plugin NAME SOURCE)
     add_library(${NAME} MODULE ${SOURCE})
     target_include_directories(${NAME} PRIVATE ${ABI_INCLUDE_DIR})
-    target_compile_definitions(${NAME} PRIVATE VERSION="0.1.0")
+    target_compile_definitions(${NAME} PRIVATE VERSION="${GMM_VERSION}")
     # Plugins must not link against Qt or any engine code — they use only the C ABI.
     set_target_properties(${NAME} PROPERTIES
         PREFIX ""
@@ -59,7 +59,7 @@ target_include_directories(IsaacModSorter PRIVATE
     ${ABI_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine/sort
 )
-target_compile_definitions(IsaacModSorter PRIVATE VERSION="0.1.0")
+target_compile_definitions(IsaacModSorter PRIVATE VERSION="${GMM_VERSION}")
 set_target_properties(IsaacModSorter PROPERTIES
     PREFIX ""
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"

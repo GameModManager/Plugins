@@ -51,7 +51,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     if (ctx->register_meta) {
         ctx->register_meta(ctx,
             "GameModManager Team",
-            "0.1.0",
+            VERSION,
             "Skyrim Special Edition game support (plugins.txt load order, Data/ layout)");
     }
     if (ctx->register_category) {
@@ -166,6 +166,15 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
      * file (mods never get the '*' enable prefix). */
     ctx->register_hook(ctx,
         "localappdata_folder",
+        "Skyrim Special Edition",
+        NULL, 0, NULL);
+
+    /* My Games folder: <prefix>/drive_c/users/<user>/Documents/My Games/
+     * <mygames_folder>. Used by the open-folder menu (MO2's
+     * documentsDirectory() equivalent) — MO2 resolves it per-game via
+     * determineMyGamesPath(gameName()). */
+    ctx->register_hook(ctx,
+        "mygames_folder",
         "Skyrim Special Edition",
         NULL, 0, NULL);
 

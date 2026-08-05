@@ -60,7 +60,7 @@ static void imagediff_provider(const char* const* source_paths,
 extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_image_diff(ctx, imagediff_provider, NULL);
     if (ctx->register_meta) {
-        ctx->register_meta(ctx, "GameModManager Team", "0.1.0",
+        ctx->register_meta(ctx, "GameModManager Team", VERSION,
                            "Image diff tool for merging conflicting sprite files");
     }
     if (ctx->register_category) {

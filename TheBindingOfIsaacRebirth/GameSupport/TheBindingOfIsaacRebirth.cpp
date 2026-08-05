@@ -128,7 +128,7 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     if (ctx->register_meta) {
         ctx->register_meta(ctx,
             "GameModManager Team",
-            "0.1.0",
+            VERSION,
             "The Binding of Isaac: Rebirth game support (metadata.xml load order, resources/ layout)");
     }
     if (ctx->register_category) {
