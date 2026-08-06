@@ -296,6 +296,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "250900",
         NULL, 0, NULL);
 
+    /* Declared game icon — SteamGridDB CDN asset. The engine downloads it into
+     * its global icon cache (~/.local/share/GameModManager/cache/icons) on
+     * first use and enforces the UI's target size when rendering. */
+    ctx->register_hook(ctx,
+        "game_icon_url",
+        "https://cdn2.steamgriddb.com/icon/bc573864331a9e42e4511de6f678aa83/4/128x128.png",
+        NULL, 0, NULL);
+
     /* Download sources — comma-separated list of source names for status bar */
     ctx->register_hook(ctx,
         "download_sources",
