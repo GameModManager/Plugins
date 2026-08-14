@@ -1,10 +1,10 @@
 #pragma once
 
-#include "engine/registry/game_capabilities.h"
-#include "engine/registry/stage_registry.h"
-#include "engine/registry/hook_registry.h"
-#include "engine/registry/game_knowledge.h"
-#include "engine/tools/external_tool.h"
+#include "engine/game/registry/game_capabilities.h"
+#include "engine/pipeline/registry/stage_registry.h"
+#include "engine/pipeline/registry/hook_registry.h"
+#include "engine/game/registry/game_knowledge.h"
+#include "engine/platform/tools/external_tool.h"
 
 #include <cstdint>
 #include <memory>

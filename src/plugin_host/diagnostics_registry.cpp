@@ -1,7 +1,7 @@
-#include "engine/plugin_host/diagnostics_registry.h"
+#include "engine/pipeline/plugin_host/diagnostics_registry.h"
 
-#include "engine/log/logger.h"
-#include "engine/plugins/plugin_database.h"
+#include "engine/core/log/logger.h"
+#include "engine/game/plugins/plugin_database.h"
 
 #include <cstring>
 

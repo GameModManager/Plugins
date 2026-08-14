@@ -1,9 +1,9 @@
-#include "engine/plugin_host/python_loader.h"
-#include "engine/plugin_host/plugin_loader.h"
-#include "engine/plugin_host/diagnostics_registry.h"
-#include "engine/events/event_bus.h"
-#include "engine/log/logger.h"
-#include "engine/registry/game_features/game_feature_registry.h"
+#include "engine/pipeline/plugin_host/python_loader.h"
+#include "engine/pipeline/plugin_host/plugin_loader.h"
+#include "engine/pipeline/plugin_host/diagnostics_registry.h"
+#include "engine/core/events/event_bus.h"
+#include "engine/core/log/logger.h"
+#include "engine/game/registry/game_features/game_feature_registry.h"
 
 #include <cstring>
 #include <filesystem>
