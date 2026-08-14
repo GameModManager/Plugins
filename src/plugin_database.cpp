@@ -1,12 +1,12 @@
-#include "engine/plugins/plugin_database.h"
+#include "engine/game/plugins/plugin_database.h"
 
 #include "engine/fs_utils.h"
-#include "engine/instance/instance.h"
-#include "engine/log/logger.h"
-#include "engine/meta/mod_meta.h"
-#include "engine/plugins/esp_header.h"
-#include "engine/registry/game_features/game_feature_registry.h"
-#include "engine/registry/game_knowledge.h"
+#include "engine/core/instance/instance.h"
+#include "engine/core/log/logger.h"
+#include "engine/mod/meta/mod_meta.h"
+#include "engine/game/plugins/esp_header.h"
+#include "engine/game/registry/game_features/game_feature_registry.h"
+#include "engine/game/registry/game_knowledge.h"
 #include "platform/platform_interface.h"
 
 #include <algorithm>
