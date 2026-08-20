@@ -18,6 +18,24 @@ function(add_game_plugin NAME SOURCE)
 endfunction()
 
 # Game plugins
+add_game_plugin(SkyrimSpecialEdition
+    src/plugins/SkyrimSpecialEdition/GameSupport/SkyrimSpecialEdition.cpp
+)
+
 add_game_plugin(TheBindingOfIsaacRebirth
     src/plugins/thebindingofisaacrebirth/thebindingofisaacrebirth.cpp
 )
+
+add_game_plugin(FomodInstaller
+    src/plugins/fomod_installer/fomod_installer.cpp
+)
+
+# Wine.json for Skyrim
+set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/SkyrimSpecialEdition/GameSupport/wine.json")
+if(EXISTS "${WINE_JSON}")
+    configure_file(
+        "${WINE_JSON}"
+        "${CMAKE_BINARY_DIR}/plugins/SkyrimSpecialEdition/wine.json"
+        COPYONLY
+    )
+endif()
