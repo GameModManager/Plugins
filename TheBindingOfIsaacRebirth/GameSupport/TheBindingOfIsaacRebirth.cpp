@@ -11,6 +11,7 @@
  *                     Thumbs.db, desktop.ini, .Trashes, .Spotlight-V100,
  *                     $RECYCLE.BIN, .directory, ~
  *   - disable_mechanism: disable.it
+ *   - delayed_disable: true (defer sentinel writes until Run/deploy phase)
  *   - workshop_id_pattern: _(\d+)$
  *   - auto_sort_groups: framework(0), libraries(10), content(20), tweaks(30),
  *                        overrides(35), graphics(40), music(45), late(50), unknown(99)
@@ -193,6 +194,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_hook(ctx,
         "disable_mechanism",
         DISABLE_MECHANISM,
+        NULL, 0, NULL);
+
+    /* Delayed disable — defer disable.it writes until the Run/deploy phase.
+     * Isaac's Direct deploy mode must not touch the game dir on toggle: the
+     * sentinel is reconciled from the profile at launch instead. */
+    ctx->register_hook(ctx,
+        "delayed_disable",
+        "true",
         NULL, 0, NULL);
 
     /* Metadata file — which file to read for mod name/version */
