@@ -15,6 +15,13 @@
  *   - workshop_id_pattern: _(\d+)$
  *   - auto_sort_groups: framework(0), libraries(10), content(20), tweaks(30),
  *                        overrides(35), graphics(40), music(45), late(50), unknown(99)
+ *   - workshop_tag_categories: Steam Workshop tag → category ID mapping
+ *
+ * Categories (22, from Steam Workshop tags):
+ *   Items > Active Items, Trinkets, Pills, Cards, Pickups
+ *   Lua, Player Characters, Familiars, Babies, Enemies, Bosses, Hazards
+ *   Rooms > Floors, Challenges, Tweaks, Removals
+ *   Graphics > Shaders, Sound Effects > Music
  *
  * Capabilities: mods, downloads
  */
@@ -111,6 +118,113 @@ static int isaac_order_encoding(const char* const* ordered_mod_ids,
     return 1;
 }
 
+/* -- Isaac mod categories (from Steam Workshop tags) --
+ * IDs start at 1000 to avoid collision with MO2's default list (max 58).
+ * Parent/child hierarchy mirrors the natural grouping of Isaac mod types.
+ */
+static const int CAT_ITEMS          = 1000;
+static const int CAT_ACTIVE_ITEMS   = 1001;
+static const int CAT_TRINKETS       = 1002;
+static const int CAT_PILLS          = 1003;
+static const int CAT_CARDS          = 1004;
+static const int CAT_PICKUPS        = 1005;
+static const int CAT_LUA            = 1006;
+static const int CAT_ROOMS          = 1007;
+static const int CAT_FLOORS         = 1008;
+static const int CAT_PLAYER_CHARS   = 1009;
+static const int CAT_FAMILIARS      = 1010;
+static const int CAT_BABIES         = 1011;
+static const int CAT_ENEMIES        = 1012;
+static const int CAT_GRAPHICS       = 1013;
+static const int CAT_SHADERS        = 1014;
+static const int CAT_SOUND_EFFECTS  = 1015;
+static const int CAT_MUSIC          = 1016;
+static const int CAT_BOSSES         = 1017;
+static const int CAT_HAZARDS        = 1018;
+static const int CAT_CHALLENGES     = 1019;
+static const int CAT_TWEAKS         = 1020;
+static const int CAT_REMOVALS       = 1021;
+
+static const int IsaacCategoryIds[] = {
+    CAT_ITEMS, CAT_ACTIVE_ITEMS, CAT_TRINKETS, CAT_PILLS, CAT_CARDS,
+    CAT_PICKUPS, CAT_LUA, CAT_ROOMS, CAT_FLOORS, CAT_PLAYER_CHARS,
+    CAT_FAMILIARS, CAT_BABIES, CAT_ENEMIES, CAT_GRAPHICS, CAT_SHADERS,
+    CAT_SOUND_EFFECTS, CAT_MUSIC, CAT_BOSSES, CAT_HAZARDS, CAT_CHALLENGES,
+    CAT_TWEAKS, CAT_REMOVALS,
+};
+
+static const char* const IsaacCategoryNames[] = {
+    "Items", "Active Items", "Trinkets", "Pills", "Cards",
+    "Pickups", "Lua", "Rooms", "Floors", "Player Characters",
+    "Familiars", "Babies", "Enemies", "Graphics", "Shaders",
+    "Sound Effects", "Music", "Bosses", "Hazards", "Challenges",
+    "Tweaks", "Removals",
+};
+
+/* Parent IDs: 0 = root, positive = parent category.
+ * Items is parent of Active Items, Trinkets, Pills, Cards, Pickups.
+ * Rooms is parent of Floors.
+ * Graphics is parent of Shaders.
+ * Sound Effects is parent of Music. */
+static const int IsaacCategoryParentIds[] = {
+    0,              /* Items */
+    CAT_ITEMS,      /* Active Items → Items */
+    CAT_ITEMS,      /* Trinkets → Items */
+    CAT_ITEMS,      /* Pills → Items */
+    CAT_ITEMS,      /* Cards → Items */
+    CAT_ITEMS,      /* Pickups → Items */
+    0,              /* Lua */
+    0,              /* Rooms */
+    CAT_ROOMS,      /* Floors → Rooms */
+    0,              /* Player Characters */
+    0,              /* Familiars */
+    0,              /* Babies */
+    0,              /* Enemies */
+    0,              /* Graphics */
+    CAT_GRAPHICS,   /* Shaders → Graphics */
+    0,              /* Sound Effects */
+    CAT_SOUND_EFFECTS, /* Music → Sound Effects */
+    0,              /* Bosses */
+    0,              /* Hazards */
+    0,              /* Challenges */
+    0,              /* Tweaks */
+    0,              /* Removals */
+};
+
+static const size_t IsaacCategoryCount =
+    sizeof(IsaacCategoryIds) / sizeof(IsaacCategoryIds[0]);
+
+/* -- Steam Workshop tag → category mapping (JSON) --
+ * Maps lowercased Steam Workshop tag strings to internal category IDs.
+ * Used by the engine to auto-assign categories to mods fetched from
+ * the Workshop based on their declared tags.
+ */
+static const char* WORKSHOP_TAG_CATEGORIES =
+    "{"
+    "\"lua\":"            "1006,"
+    "\"items\":"          "1000,"
+    "\"active items\":"   "1001,"
+    "\"trinkets\":"       "1002,"
+    "\"pills\":"          "1003,"
+    "\"cards\":"          "1004,"
+    "\"pickups\":"        "1005,"
+    "\"rooms\":"          "1007,"
+    "\"floors\":"         "1008,"
+    "\"player characters\":" "1009,"
+    "\"familiars\":"      "1010,"
+    "\"babies\":"         "1011,"
+    "\"enemies\":"        "1012,"
+    "\"graphics\":"       "1013,"
+    "\"shaders\":"        "1014,"
+    "\"sound effects\":"  "1015,"
+    "\"music\":"          "1016,"
+    "\"bosses\":"         "1017,"
+    "\"hazards\":"        "1018,"
+    "\"challenges\":"     "1019,"
+    "\"tweaks\":"         "1020,"
+    "\"removals\":"       "1021"
+    "}";
+
 /* -- Registration entry point -- */
 extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     /* Register identity — Isaac: Rebirth (Steam appid 250900) */
@@ -134,6 +248,17 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     }
     if (ctx->register_category) {
         ctx->register_category(ctx, "Game Support");
+    }
+
+    /* Register Isaac mod categories — 22 Steam Workshop-derived categories
+     * with parent/child hierarchy (Items > Active Items/Trinkets/etc.,
+     * Rooms > Floors, Graphics > Shaders, Sound Effects > Music). */
+    if (ctx->register_categories) {
+        ctx->register_categories(ctx,
+            IsaacCategoryIds,
+            IsaacCategoryNames,
+            IsaacCategoryParentIds,
+            IsaacCategoryCount);
     }
 
     /* Register order encoding hook — metadata.xml format */
@@ -244,6 +369,14 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_hook(ctx,
         "auto_sort_groups",
         AUTO_SORT_GROUPS,
+        NULL, 0, NULL);
+
+    /* Workshop tag → category mapping — JSON {lowercase_tag: category_id}.
+     * The engine uses this to auto-assign categories to mods fetched from
+     * the Steam Workshop based on their declared tags. */
+    ctx->register_hook(ctx,
+        "workshop_tag_categories",
+        WORKSHOP_TAG_CATEGORIES,
         NULL, 0, NULL);
 
     /* Masterlist URL — community-maintained dependency rules */
