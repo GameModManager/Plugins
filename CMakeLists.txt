@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../abi/include")
+set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
 
 function(add_game_plugin NAME SOURCE)
     add_library(${NAME} MODULE ${SOURCE})
@@ -28,6 +29,22 @@ add_game_plugin(TheBindingOfIsaacRebirth
 
 add_game_plugin(FomodInstaller
     src/plugins/fomod_installer/fomod_installer.cpp
+)
+
+# Isaac Mod Sorter — needs Core engine/sort headers
+add_library(IsaacModSorter MODULE
+    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorter.cpp
+    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorterProvider.cpp
+    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/AutoSorter.cpp
+)
+target_include_directories(IsaacModSorter PRIVATE
+    ${ABI_INCLUDE_DIR}
+    ${CORE_ENGINE_DIR}/sort
+)
+target_compile_definitions(IsaacModSorter PRIVATE VERSION="${GMM_VERSION}")
+set_target_properties(IsaacModSorter PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
 )
 
 # Wine.json for Skyrim
