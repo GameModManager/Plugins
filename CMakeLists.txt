@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../abi/include")
-set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
+set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Core/src/engine")
 
 function(add_game_plugin NAME SOURCE)
     add_library(${NAME} MODULE ${SOURCE})
@@ -31,7 +31,10 @@ add_game_plugin(FomodInstaller
     src/plugins/fomod_installer/fomod_installer.cpp
 )
 
-# Isaac Mod Sorter — needs Core engine/sort headers
+# Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)
+
 add_library(IsaacModSorter MODULE
     src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorter.cpp
     src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorterProvider.cpp
@@ -41,6 +44,7 @@ target_include_directories(IsaacModSorter PRIVATE
     ${ABI_INCLUDE_DIR}
     ${CORE_ENGINE_DIR}/sort
 )
+target_link_libraries(IsaacModSorter PRIVATE PkgConfig::YAMLCPP)
 target_compile_definitions(IsaacModSorter PRIVATE VERSION="${GMM_VERSION}")
 set_target_properties(IsaacModSorter PROPERTIES
     PREFIX ""
