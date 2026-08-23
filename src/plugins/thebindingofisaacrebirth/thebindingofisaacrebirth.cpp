@@ -368,8 +368,8 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
     /* Masterlist URL -- community-maintained dependency rules */
     ctx->register_hook(ctx,
         "masterlist_url",
-        "https://raw.githubusercontent.com/PetricaT/GameModManager-Masterlist/"
-        "main/isaac/masterlist.yaml",
+        "https://raw.githubusercontent.com/GameModManager/Masterlist/"
+        "refs/heads/main/games/thebindingofisaacrebirth/masterlist.yaml",
         NULL, 0, NULL);
 
     /* Steam app name -- for VDF detection and folder resolution */

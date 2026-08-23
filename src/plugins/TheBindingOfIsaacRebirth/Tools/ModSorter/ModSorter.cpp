@@ -95,14 +95,15 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
     }
 
     // User-facing options (key:value pairs, rendered as editable rows in the
-    // Plugins settings tab). Empty values = engine falls back to defaults.
+    // Plugins settings tab).
     if (ctx->register_settings) {
         static const char* settings_keys[] = {
-            "masterlist_url",    // remote masterlist to fetch; empty = bundled
+            "masterlist_url",    // remote masterlist to fetch
             "auto_sort_on_load", // "1" = run the sort when mods load
         };
         static const char* settings_values[] = {
-            "",
+            "https://raw.githubusercontent.com/GameModManager/Masterlist/"
+            "refs/heads/main/games/thebindingofisaacrebirth/masterlist.yaml",
             "1",
         };
         ctx->register_settings(ctx, settings_keys, settings_values,
