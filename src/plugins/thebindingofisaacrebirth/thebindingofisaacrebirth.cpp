@@ -389,6 +389,19 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "deploy_prefix", "mods",
         NULL, 0, NULL);
 
+#ifdef __APPLE__
+    /* macOS game mods dir (Workspace-otx) -- absolute path where Isaac reads
+     * mods on macOS: ~/Library/Application Support/, NOT inside the game
+     * install directory. The engine expands ~ against $HOME and uses this
+     * as the game-native mods dir (scan, conflict sources, deploy target)
+     * instead of game_dir/mods. Compiled per-platform, so only the macOS
+     * build declares it; Windows/Linux keep game_dir/mods via mods_subpath. */
+    ctx->register_hook(ctx,
+        "game_mods_dir",
+        "~/Library/Application Support/Binding of Isaac Afterbirth+ Mods",
+        NULL, 0, NULL);
+#endif
+
     /* Deploy include mod id -- whether to include the mod folder name in the
      * deploy target path. Isaac mods go into mods/ModName/ (true).
      * Skyrim-style mods go directly into Data/ (false, default). */
