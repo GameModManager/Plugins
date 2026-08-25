@@ -406,10 +406,14 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
      * The launcher auto-detects runtime from file extension:
      *   .exe -> Proton, otherwise -> native.
      * REPENTOGONLauncher is the preferred entry point (mod loader).
-     * Listed in priority order: first = default if found. */
+     * Listed in priority order: first = default if found. The macOS Steam
+     * release is "The Binding of Isaac Rebirth.app"; the Core-side game-dir
+     * scan (Workspace-6su) drops it on Windows/Linux where it does not
+     * exist, so declaring it here needs no per-platform split. */
     ctx->register_hook(ctx,
         "executables",
-        "REPENTOGONLauncher/REPENTOGONLauncher.exe,isaac-ng.exe",
+        "REPENTOGONLauncher/REPENTOGONLauncher.exe,isaac-ng.exe,"
+        "The Binding of Isaac Rebirth.app",
         NULL, 0, NULL);
 
     /* Steam appid -- used by ProtonRuntime to find the correct per-game
