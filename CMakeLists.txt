@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../abi/include")
-set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Core/src/engine")
+set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
 
 function(add_game_plugin NAME SOURCE)
     add_library(${NAME} MODULE ${SOURCE})
