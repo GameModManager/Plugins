@@ -112,14 +112,6 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx *ctx) {
    */
   ctx->register_hook(ctx, "mods_subpath", "Data", NULL, 0, NULL);
 
-  /* Ignored directories — vanilla engine subdirectories in Data/ that must
-   * not appear as mods.  In portable mode the scanner resolves to Data/ and
-   * would otherwise register Scripts/, Meshes/, etc. as managed mods. */
-  ctx->register_hook(ctx, "ignored_dirs",
-                     "Scripts,SKSE,SEQ,docs,Interface,Meshes,Textures,Sound,"
-                     "Music,Video,Shaders,materials,grass,landscape,vis,seq",
-                     NULL, 0, NULL);
-
   /* Content-validity markers (MO2's GamebryoModDataChecker allow-sets):
    * top-level folder names and file extensions that count as real game data.
    * A mod folder with none of these - and no meta.ini - is flagged "No valid
