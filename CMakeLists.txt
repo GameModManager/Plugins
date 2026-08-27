@@ -41,7 +41,7 @@ add_game_plugin(SkyrimSpecialEdition
 )
 
 add_game_plugin(TheBindingOfIsaacRebirth
-    src/plugins/thebindingofisaacrebirth/thebindingofisaacrebirth.cpp
+    src/plugins/TheBindingOfIsaacRebirth/GameSupport/TheBindingOfIsaacRebirth.cpp
 )
 
 add_game_plugin(FomodInstaller
