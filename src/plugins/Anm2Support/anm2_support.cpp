@@ -275,18 +275,12 @@ extern "C" {
 uint32_t gmm_abi_version() { return GMM_ABI_VERSION; }
 
 void gmm_register_v1(GmmRegistrationCtx *ctx) {
-  /* -- Identity: set display name to "ANM2" -- */
-  if (ctx->register_identity) {
-    ctx->register_identity(ctx,
-                           0, /* steam_appid — N/A for file-format plugins */
-                           nullptr,  /* gog_id */
-                           nullptr,  /* epic_namespace */
-                           nullptr,  /* nexus_domain */
-                           "ANM2",   /* display_name */
-                           nullptr,  /* exe_windows */
-                           nullptr,  /* exe_linux */
-                           nullptr); /* exe_macos */
-  }
+  /* -- No register_identity --
+   * Anm2Support is a "File Support" plugin, not a game. Calling
+   * register_identity would set game_support = true and make it appear in the
+   * game selector, which is wrong for a file-format plugin. It is discovered
+   * and listed via register_category("File Support") + register_meta instead.
+   */
 
   /* -- Metadata for the Plugins settings tab -- */
   if (ctx->register_meta) {
