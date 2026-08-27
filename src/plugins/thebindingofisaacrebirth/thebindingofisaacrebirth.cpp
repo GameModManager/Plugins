@@ -26,7 +26,7 @@
  * Capabilities: mods, downloads
  */
 
-#include "gmm_abi_v1.h"
+#include "gmm_abi_v2.h"
 
 #include <cstdio>
 #include <cstring>
@@ -243,151 +243,124 @@ uint32_t gmm_abi_version() {
     return GMM_ABI_VERSION;
 }
 
-void gmm_register_v1(GmmRegistrationCtx* ctx) {
-    /* -- Identity -- Isaac: Rebirth (Steam appid 250900) */
-    ctx->register_identity(ctx,
-        STEAM_APPID,
-        NULL,                   /* gog_id */
-        NULL,                   /* epic_namespace */
-        NEXUS_DOMAIN,
-        "The Binding of Isaac: Rebirth",
-        "isaac-ng.exe",         /* exe_windows */
-        NULL,                   /* exe_linux */
-        NULL                    /* exe_macos */
-    );
+void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
+    if (!ctx)
+        return;
 
-    /* -- Metadata for the Plugins settings tab -- */
-    if (ctx->register_meta) {
-        ctx->register_meta(ctx,
-            "GameModManager Team",
-            "1.0.0",
-            "The Binding of Isaac: Rebirth game support "
-            "(metadata.xml load order, resources/ layout)");
-    }
+    /* -- Game identity -- Isaac: Rebirth (Steam appid 250900) */
+    GmmGameInfo game{};
+    game.game_id = "TheBindingOfIsaacRebirth";
+    game.display_name = "The Binding of Isaac: Rebirth";
+    game.steam_appid = STEAM_APPID;
+    game.gog_id = nullptr;
+    game.epic_namespace = nullptr;
+    game.nexus_domain = NEXUS_DOMAIN;
+    game.exe_windows = "isaac-ng.exe";
+    game.exe_linux = nullptr;
+    game.exe_macos = nullptr;
+    ctx->register_game(ctx, game);
 
-    if (ctx->register_category) {
-        ctx->register_category(ctx, "Game Support");
-    }
-
-    /* -- Isaac mod categories (22 Steam Workshop-derived) --
-     * Parent/child hierarchy: Items > Active Items/Trinkets/etc.,
-     * Rooms > Floors, Graphics > Shaders, Sound Effects > Music. */
-    if (ctx->register_categories) {
-        ctx->register_categories(ctx,
-            IsaacCategoryIds,
-            IsaacCategoryNames,
-            IsaacCategoryParentIds,
-            IsaacCategoryCount);
-    }
+    /* -- Plugin metadata for the Plugins settings tab -- */
+    GmmPluginInfo info{};
+    info.name = "The Binding of Isaac: Rebirth";
+    info.author = "GameModManager Team";
+    info.version = "1.0.0";
+    info.description = "The Binding of Isaac: Rebirth game support "
+                      "(metadata.xml load order, resources/ layout)";
+    ctx->register_plugin(ctx, info);
 
     /* -- Order encoding hook -- metadata.xml format */
-    ctx->register_order_encoding(ctx, isaac_order_encoding);
-
-    /* -- Tabs -- */
-    ctx->register_tab(ctx,
-        "mods", "Mods", "mods/",
-        "Isaac mod folders (rename to reorder, disable.it to toggle)",
-        NULL, NULL, NULL, NULL, NULL);
-
-    ctx->register_tab(ctx,
-        "downloads", "Downloads", "mods/",
-        "Download mods from Steam Workshop or Nexus Mods",
-        "nxm", "nexusmods.com", "nexus", NULL, NULL);
-
-    ctx->register_tab(ctx,
-        "conflicts", "Conflicts", "mods/",
-        "File conflicts between installed mods",
-        NULL, NULL, NULL, NULL, "data");
+    ctx->register_order_encoding(ctx, isaac_order_encoding, nullptr);
 
     /* -- Game-dependent hooks -- */
 
     /* Conflict extensions -- Isaac's asset/script formats */
     ctx->register_hook(ctx,
         "conflict_extensions", CONFLICT_EXTENSIONS,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Ignored files -- skip during conflict scanning */
     ctx->register_hook(ctx,
         "ignored_files", IGNORED_FILES,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Disable mechanism -- Isaac checks for this file to skip loading */
     ctx->register_hook(ctx,
         "disable_mechanism", DISABLE_MECHANISM,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Delayed disable -- defer disable.it writes until Run/deploy phase.
      * Isaac's Direct deploy mode must not touch the game dir on toggle:
      * the sentinel is reconciled from the profile at launch instead. */
     ctx->register_hook(ctx,
         "delayed_disable", "true",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Metadata file -- which file to read for mod name/version */
     ctx->register_hook(ctx,
         "metadata_file", METADATA_FILE,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Metadata name tag -- XML tag containing the mod display name */
     ctx->register_hook(ctx,
         "metadata_name_tag", METADATA_NAME_TAG,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Metadata version tag -- XML tag containing the mod version */
     ctx->register_hook(ctx,
         "metadata_version_tag", METADATA_VERSION_TAG,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Priority prefix regex -- strip this from display name */
     ctx->register_hook(ctx,
         "priority_prefix_re", PRIORITY_PREFIX_RE,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Priority format -- printf format for the NNN prefix */
     ctx->register_hook(ctx,
         "priority_format", PRIORITY_FORMAT,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Workshop ID pattern -- extract from folder name suffix _<digits> */
     ctx->register_hook(ctx,
         "workshop_id_pattern", WORKSHOP_ID_PATTERN,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Auto-sort group definitions -- JSON array of {name, priority} */
     ctx->register_hook(ctx,
         "auto_sort_groups", AUTO_SORT_GROUPS,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Workshop tag -> category mapping -- JSON {lowercase_tag: category_id}.
      * The engine uses this to auto-assign categories to mods fetched from
      * the Steam Workshop based on their declared tags. */
     ctx->register_hook(ctx,
         "workshop_tag_categories", WORKSHOP_TAG_CATEGORIES,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Masterlist URL -- community-maintained dependency rules */
     ctx->register_hook(ctx,
         "masterlist_url",
         "https://raw.githubusercontent.com/GameModManager/Masterlist/"
         "refs/heads/main/games/thebindingofisaacrebirth/masterlist.yaml",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Steam app name -- for VDF detection and folder resolution */
     ctx->register_hook(ctx,
         "steam_app_name", "The Binding of Isaac Rebirth",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Mods subfolder -- relative to game install root */
     ctx->register_hook(ctx,
         "mods_subpath", "mods",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Deploy prefix -- game-relative path prefix for deployed mod files.
      * Mod content inside staging_dir gets placed under this subpath.
      * Isaac deploys to "mods" (game_dir/mods/ModName/...). */
     ctx->register_hook(ctx,
         "deploy_prefix", "mods",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
 #ifdef __APPLE__
     /* macOS game mods dir (Workspace-otx) -- absolute path where Isaac reads
@@ -399,7 +372,7 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
     ctx->register_hook(ctx,
         "game_mods_dir",
         "~/Library/Application Support/Binding of Isaac Afterbirth+ Mods",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 #endif
 
     /* Deploy include mod id -- whether to include the mod folder name in the
@@ -407,12 +380,12 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
      * Skyrim-style mods go directly into Data/ (false, default). */
     ctx->register_hook(ctx,
         "deploy_include_mod_id", "true",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Game versions -- Isaac version string -> release date */
     ctx->register_hook(ctx,
         "game_versions", GAME_VERSIONS,
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Executables -- relative paths to all launchable binaries.
      * Isaac ships as a Windows game; all executables are .exe files.
@@ -427,14 +400,14 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "executables",
         "REPENTOGONLauncher/REPENTOGONLauncher.exe,isaac-ng.exe,"
         "The Binding of Isaac Rebirth.app",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Steam appid -- used by ProtonRuntime to find the correct per-game
      * Proton version from Steam's config.vdf. Also used by platform
      * detection to find the game's Steam install directory. */
     ctx->register_hook(ctx,
         "steam_appid", "250900",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Declared game icon -- SteamGridDB CDN asset. The engine downloads it
      * into its global icon cache (~/.local/share/GameModManager/cache/icons)
@@ -443,18 +416,18 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
         "game_icon_url",
         "https://cdn2.steamgriddb.com/icon/"
         "bc573864331a9e42e4511de6f678aa83/4/128x128.png",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Download sources -- comma-separated list of source names for status bar */
     ctx->register_hook(ctx,
         "download_sources", "Nexus,Steam",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Mod counter label -- how to label the mod count in status bar.
      * "Mods" = raw mod folders, "Plugins" = ESM/ESP-style plugins. */
     ctx->register_hook(ctx,
         "mod_counter_label", "Mods",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Conflict order reversed -- Isaac resolves conflicts top-to-bottom:
      * the mod at the top of the list wins file conflicts (loads first).
@@ -462,13 +435,13 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
      * direction changes. The Overwrite mod (priority 0) sits at the top. */
     ctx->register_hook(ctx,
         "conflict_order_reversed", "true",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Conflict scan dirs -- Isaac mods only conflict in these subdirectories;
      * anything outside is not read by the game engine. */
     ctx->register_hook(ctx,
         "conflict_scan_dirs", "resources,resources-dlc3",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Content-validity markers: top-level folders that count as real Isaac
      * mod data. A mod folder without resources/, resources-dlc3/ - and without
@@ -476,13 +449,13 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
      * flagged "No valid game data" in the mod list. */
     ctx->register_hook(ctx,
         "mod_valid_dirs", "resources,resources-dlc3",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 
     /* Uses merged pseudo-mod -- only Isaac pins the __merged__ row in the mod
      * list (merge-tool output landing zone). Other games don't use it. */
     ctx->register_hook(ctx,
         "uses_merged", "true",
-        NULL, 0, NULL);
+        nullptr, 0, nullptr);
 }
 
 }  /* extern "C" */

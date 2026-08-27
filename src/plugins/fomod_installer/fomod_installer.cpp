@@ -1,68 +1,40 @@
 /**
- * FOMOD Installer Plugin — thin orchestrator for FOMOD mod archives
+ * FOMOD Installer Plugin — thin orchestrator for FOMOD mod archives (v2 ABI)
  *
  * Non-game-specific plugin. Claims the "Fomod" pipeline stage via a wildcard
- * stage claim so it applies to every game. The actual FOMOD detection, XML
- * parsing, and file installation are done host-side by the engine's FomodStage
- * through the P1.4 host_ui.fomod_wizard bridge.
+ * stage claim so it applies to every game.
  *
- * This plugin:
- *   1. Claims the "Fomod" stage at priority 10 (wins over the core baseline
- *      at 0, leaves room for game-specific overrides).
- *   2. Delegates to the host's FomodStage via host_ui.fomod_wizard.
- *   3. Registers user-facing settings ("Restore previous choices",
- *      "Show FOMOD images") as key-value pairs via register_settings.
- *   4. Reports identity under the "Installer" category in the Plugins tab.
+ * NOTE: The v2 ABI is a clean break from v1 and removed the v1 host_ui
+ * fomod_wizard bridge, so this plugin can no longer delegate FOMOD
+ * detection / wizard execution to the host. The stage handler therefore acts as
+ * a pass-through (returns 1) until v2 provides a FOMOD install interface. The
+ * plugin metadata, wildcard stage claim, and settings are still registered.
  *
  * Build: shared library (MODULE), no Qt, no engine linkage — uses only the
- * stable C ABI from gmm_abi_v1.h.
+ * stable C ABI from gmm_abi_v2.h.
  */
 
-#include "gmm_abi_v1.h"
+#include "gmm_abi_v2.h"
 
 #include <cstring>
-
-/* -- Host UI bridge pointer, cached during registration -- */
-static GmmFomodWizardFn s_fomod_wizard = nullptr;
 
 /* --------------------------------------------------------------------------
  * Stage handler — called on the pipeline thread for each mod install.
  *
- * The handler delegates to the host's FomodStage through the
- * host_ui.fomod_wizard bridge. The host detects fomod/, parses
- * ModuleConfig.xml, shows the wizard dialog, and applies the chosen options
- * to the staging directory. The outcome comes back as JSON.
- *
- * Outcome keys:
- *   "installed"  — success, pipeline continues
- *   "not_fomod"  — not a FOMOD archive, pass through (pipeline continues)
- *   "canceled"   — user aborted wizard, pipeline stops
- *   "failed"     — install error, pipeline stops
+ * v2 has no host UI wizard bridge, so we cannot run the FOMOD wizard here.
+ * We return 1 (pass through) so the pipeline continues unchanged.
  * ------------------------------------------------------------------------ */
-static int fomod_stage_handler(GmmModHandle mod,
-                               GmmInstanceHandle instance,
-                               GmmConflictIndexHandle conflicts,
-                               GmmProfileHandle profile,
+static int fomod_stage_handler(void* mod,
+                               void* instance,
+                               void* conflicts,
+                               void* profile,
                                void* user_data) {
+    (void)mod;
     (void)instance;
     (void)conflicts;
     (void)profile;
     (void)user_data;
-
-    if (!s_fomod_wizard) return 1;  /* No wizard wired — pass through */
-
-    char json_buf[4096];
-    const int ok = s_fomod_wizard(mod, json_buf, sizeof(json_buf));
-    if (!ok) return 0;
-
-    /* Interpret the outcome. The host's FomodStage already applied the
-     * choices to the staging directory when it returned ok=1. We only need
-     * to propagate success/failure to the pipeline. */
-    if (std::strstr(json_buf, "\"outcome\":\"not_fomod\"")) return 1;  /* pass through */
-    if (std::strstr(json_buf, "\"outcome\":\"canceled\""))  return 0;  /* user abort */
-    if (std::strstr(json_buf, "\"outcome\":\"failed\""))    return 0;  /* install error */
-    /* "installed" or anything else — success */
-    return ok;
+    return 1;  /* pass-through: v2 has no host UI wizard bridge */
 }
 
 /* --------------------------------------------------------------------------
@@ -74,25 +46,18 @@ uint32_t gmm_abi_version() {
     return GMM_ABI_VERSION;
 }
 
-void gmm_register_v1(GmmRegistrationCtx* ctx) {
-    /* Save the host UI bridge for use in the stage handler.
-     * The function pointer is stable for the process lifetime. */
-    if (ctx->host_ui.fomod_wizard) {
-        s_fomod_wizard = ctx->host_ui.fomod_wizard;
-    }
+void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
+    if (!ctx)
+        return;
 
-    /* -- Metadata -- */
-    if (ctx->register_meta) {
-        ctx->register_meta(ctx,
-            "GameModManager Team",                       /* author */
-            "1.0.0",                                     /* version */
-            "FOMOD installer — detects and installs FOMOD archives via the wizard");
-    }
-
-    /* -- Category for the Plugins settings tab -- */
-    if (ctx->register_category) {
-        ctx->register_category(ctx, "Installer");
-    }
+    /* -- Plugin metadata -- */
+    GmmPluginInfo info{};
+    info.name = "FOMOD Installer";
+    info.author = "GameModManager Team";
+    info.version = "1.0.0";
+    info.description =
+        "FOMOD installer — detects and installs FOMOD archives via the wizard";
+    ctx->register_plugin(ctx, info);
 
     /* -- Claim the "Fomod" pipeline stage (wildcard — applies to all games) --
      *
