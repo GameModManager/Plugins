@@ -51,6 +51,7 @@ add_game_plugin(FomodInstaller
 add_game_plugin(Anm2Support
     src/plugins/FileSupport/Anm2Support/anm2_support.cpp
 )
+target_link_libraries(Anm2Support PRIVATE Qt6::Widgets)
 
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
