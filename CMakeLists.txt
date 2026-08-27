@@ -31,6 +31,10 @@ add_game_plugin(FomodInstaller
     src/plugins/fomod_installer/fomod_installer.cpp
 )
 
+add_game_plugin(Anm2Support
+    src/plugins/Anm2Support/anm2_support.cpp
+)
+
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)

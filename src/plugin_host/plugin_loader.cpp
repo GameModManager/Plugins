@@ -14,6 +14,7 @@
 #include "gmm_abi_v1.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <filesystem>
@@ -513,6 +514,131 @@ static void cb_register_sort_provider(GmmRegistrationCtx* ctx,
     SortRegistry::instance().register_provider(gid, std::move(provider));
 
     Logger::instance().debug("Plugin registered sort provider for game=" + gid);
+}
+
+static void cb_register_animation_parser(GmmRegistrationCtx* ctx,
+                                          const char* game_id,
+                                          const char* file_extension,
+                                          GmmAnimationParserFn fn,
+                                          int priority,
+                                          void* user_data) {
+    auto* bridge = static_cast<RegistrationBridge*>(ctx->user_data);
+    if (!bridge || !bridge->current_plugin) return;
+
+    std::string gid = game_id ? game_id : bridge->current_plugin->game_id;
+    std::string ext = file_extension ? file_extension : "";
+    if (gid.empty() || ext.empty() || !fn) {
+        Logger::instance().warn("Animation parser registered with empty game_id/extension or null fn");
+        return;
+    }
+
+    // Ensure the extension starts with a dot for consistent matching
+    if (ext[0] != '.') ext = "." + ext;
+
+    auto feature = std::make_shared<AnimationParserFeature>(
+        [fn, user_data](const std::string& file_path,
+                        const std::string& base_dir)
+            -> std::optional<AnimationParserFeature::AnimationData> {
+            GmmAnimationDataC data = {};
+            if (!fn(file_path.c_str(), base_dir.c_str(), &data, user_data))
+                return std::nullopt;
+
+            AnimationParserFeature::AnimationData result;
+            result.fps = data.fps;
+            result.canvas_width = data.canvas_width;
+            result.canvas_height = data.canvas_height;
+
+            for (size_t f = 0; f < data.frame_count; ++f) {
+                const auto& c_frame = data.frames[f];
+                AnimationParserFeature::Frame frame;
+                frame.delay_ms = static_cast<int>(c_frame.delay_ms);
+                for (size_t l = 0; l < c_frame.layer_count; ++l) {
+                    const auto& c_layer = c_frame.layers[l];
+                    AnimationParserFeature::LayerItem layer;
+                    layer.x = static_cast<float>(c_layer.x);
+                    layer.y = static_cast<float>(c_layer.y);
+                    layer.width = c_layer.width;
+                    layer.height = c_layer.height;
+                    layer.rgba_pixels.assign(c_layer.rgba_pixels,
+                                             c_layer.rgba_pixels + c_layer.pixel_count);
+                    frame.layers.push_back(std::move(layer));
+                }
+                result.frames.push_back(std::move(frame));
+            }
+
+            // Free the C-allocated arrays
+            for (size_t f = 0; f < data.frame_count; ++f) {
+                auto& c_frame = data.frames[f];
+                for (size_t l = 0; l < c_frame.layer_count; ++l)
+                    free(c_frame.layers[l].rgba_pixels);
+                free(c_frame.layers);
+            }
+            free(data.frames);
+
+            return result;
+        });
+
+    GameFeatureRegistry::instance().register_feature(
+        gid, AnimationParserFeature::type_key(), priority,
+        std::move(feature), bridge->current_plugin->path);
+
+    Logger::instance().debug("Plugin registered animation parser: ext=" + ext +
+        " (game=" + gid + ", priority=" + std::to_string(priority) + ")");
+}
+
+static void cb_register_save_parser(GmmRegistrationCtx* ctx,
+                                     const char* game_id,
+                                     GmmSaveParserFn fn,
+                                     int priority,
+                                     void* user_data) {
+    auto* bridge = static_cast<RegistrationBridge*>(ctx->user_data);
+    if (!bridge || !bridge->current_plugin) return;
+
+    std::string gid = game_id ? game_id : bridge->current_plugin->game_id;
+    if (gid.empty() || !fn) {
+        Logger::instance().warn("Save parser registered with empty game_id or null fn");
+        return;
+    }
+
+    auto feature = std::make_shared<SaveParserFeature>(
+        [fn, user_data](const std::filesystem::path& path,
+                        const std::string& game_id_str) -> SaveGame {
+            GmmSaveGameC c_data = {};
+            if (!fn(path.string().c_str(), game_id_str.c_str(), &c_data, user_data))
+                throw SaveParseError("Plugin save parser returned 0");
+
+            SaveGame sg;
+            sg.file_path = c_data.file_path ? c_data.file_path : "";
+            sg.game_id = c_data.game_id ? c_data.game_id : "";
+            sg.creation_time = c_data.creation_time;
+            sg.pc_name = c_data.pc_name ? c_data.pc_name : "";
+            sg.pc_level = c_data.pc_level;
+            sg.pc_location = c_data.pc_location ? c_data.pc_location : "";
+            sg.save_number = c_data.save_number;
+
+            for (uint32_t i = 0; i < c_data.plugin_count && i < GMM_SAVE_MAX_PLUGINS; ++i)
+                sg.plugins.push_back(c_data.plugins[i] ? c_data.plugins[i] : "");
+            for (uint32_t i = 0; i < c_data.light_plugin_count && i < GMM_SAVE_MAX_PLUGINS; ++i)
+                sg.light_plugins.push_back(c_data.light_plugins[i] ? c_data.light_plugins[i] : "");
+
+            // Free the C-allocated strings
+            free(c_data.file_path);
+            free(c_data.game_id);
+            free(c_data.pc_name);
+            free(c_data.pc_location);
+            for (uint32_t i = 0; i < c_data.plugin_count && i < GMM_SAVE_MAX_PLUGINS; ++i)
+                free(c_data.plugins[i]);
+            for (uint32_t i = 0; i < c_data.light_plugin_count && i < GMM_SAVE_MAX_PLUGINS; ++i)
+                free(c_data.light_plugins[i]);
+
+            return sg;
+        });
+
+    GameFeatureRegistry::instance().register_feature(
+        gid, SaveParserFeature::type_key(), priority,
+        std::move(feature), bridge->current_plugin->path);
+
+    Logger::instance().debug("Plugin registered save parser for game=" + gid);
 }
 
 static void cb_register_capability(GmmRegistrationCtx* ctx,
