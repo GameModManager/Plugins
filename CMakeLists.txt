@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../abi/include")
+set(ABI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ABI/include")
 set(CORE_ENGINE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
 
 function(add_game_plugin NAME SOURCE)
@@ -29,6 +29,10 @@ add_game_plugin(TheBindingOfIsaacRebirth
 
 add_game_plugin(FomodInstaller
     src/plugins/fomod_installer/fomod_installer.cpp
+)
+
+add_game_plugin(Anm2Support
+    src/plugins/Anm2Support/anm2_support.cpp
 )
 
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
