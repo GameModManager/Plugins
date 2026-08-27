@@ -106,6 +106,9 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
         "LOOT-style mod sorter for The Binding of Isaac: Rebirth";
     ctx->register_plugin(ctx, info);
 
+    if (ctx->register_category)
+        ctx->register_category(ctx, "Tool");
+
     // User-facing options (key:value pairs, rendered as editable rows in the
     // Plugins settings tab).
     if (ctx->register_settings) {
