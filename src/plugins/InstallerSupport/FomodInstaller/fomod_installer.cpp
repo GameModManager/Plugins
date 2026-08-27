@@ -23,7 +23,7 @@
 #include <cstring>
 
 /* -- Host UI bridge pointer, cached during registration -- */
-static GmmFomodWizardFn s_fomod_wizard = nullptr;
+static int (*s_fomod_wizard)(void*, char*, size_t) = nullptr;
 
 /* --------------------------------------------------------------------------
  * Stage handler — called on the pipeline thread for each mod install.
