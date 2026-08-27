@@ -269,8 +269,36 @@ void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
                       "(metadata.xml load order, resources/ layout)";
     ctx->register_plugin(ctx, info);
 
+    /* -- Category for the Plugins settings tab -- */
+    ctx->register_category(ctx, "Game Support");
+
+    /* -- Isaac mod categories (22 Steam Workshop-derived) --
+     * Parent/child hierarchy: Items > Active Items/Trinkets/etc.,
+     * Rooms > Floors, Graphics > Shaders, Sound Effects > Music. */
+    ctx->register_categories(ctx,
+        IsaacCategoryIds,
+        IsaacCategoryNames,
+        IsaacCategoryParentIds,
+        IsaacCategoryCount);
+
     /* -- Order encoding hook -- metadata.xml format */
     ctx->register_order_encoding(ctx, isaac_order_encoding, nullptr);
+
+    /* -- Tabs -- */
+    ctx->register_tab(ctx,
+        "mods", "Mods", "mods/",
+        "Isaac mod folders (rename to reorder, disable.it to toggle)",
+        nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    ctx->register_tab(ctx,
+        "downloads", "Downloads", "mods/",
+        "Download mods from Steam Workshop or Nexus Mods",
+        "nxm", "nexusmods.com", "nexus", nullptr, nullptr);
+
+    ctx->register_tab(ctx,
+        "conflicts", "Conflicts", "mods/",
+        "File conflicts between installed mods",
+        nullptr, nullptr, nullptr, nullptr, "data");
 
     /* -- Game-dependent hooks -- */
 

@@ -61,8 +61,45 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
                      "order, Data/ layout)";
   ctx->register_plugin(ctx, info);
 
+  /* Category for the Plugins settings tab */
+  ctx->register_category(ctx, "Game Support");
+
   /* Register order encoding hook */
   ctx->register_order_encoding(ctx, skyrim_order_encoding, nullptr);
+
+  /* Register tabs — tells the UI which tabs to show and their order */
+  ctx->register_tab(ctx, "plugins", "Plugins", "Data/",
+                    "ESP/ESM/ESL plugin load order via plugins.txt",
+                    nullptr, /* no protocol handler — plugins come from mods */
+                    nullptr, nullptr,
+                    "archives", /* insert_before: Plugins before Archives */
+                    nullptr);
+
+  ctx->register_tab(ctx, "archives", "Archives", "Data/",
+                    "BSA/BA2 archive files loaded by the game engine", nullptr,
+                    nullptr, nullptr,
+                    "downloads", /* insert_before: Archives before Downloads */
+                    nullptr);
+
+  ctx->register_tab(ctx, "saves", "Saves",
+                    "Documents/My Games/Skyrim Special Edition/Saves/",
+                    "Save game files (.ess, .skse)", nullptr, nullptr, nullptr,
+                    "downloads", /* insert_before: Saves before Downloads */
+                    "data"       /* insert_after: Saves after Data */
+  );
+
+  ctx->register_tab(ctx, "downloads", "Downloads", "downloads/",
+                    "Download mods from Nexus Mods", "nxm", "nexusmods.com",
+                    "nexus", nullptr, /* insert_before: none — goes last */
+                    nullptr);
+
+  /* Position "Data" between Archives and Downloads */
+  ctx->register_tab(ctx, "data", "Data", "",
+                    "Virtual file system view of the game's Data folder", nullptr,
+                    nullptr, nullptr,
+                    "downloads", /* insert_before: Data before Downloads */
+                    "archives"   /* insert_after: Data after Archives */
+  );
 
   /* Download sources — for status bar display */
   ctx->register_hook(ctx, "download_sources", "Nexus", nullptr, 0, nullptr);
