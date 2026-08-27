@@ -45,11 +45,11 @@ add_game_plugin(TheBindingOfIsaacRebirth
 )
 
 add_game_plugin(FomodInstaller
-    src/plugins/fomod_installer/fomod_installer.cpp
+    src/plugins/InstallerSupport/FomodInstaller/fomod_installer.cpp
 )
 
 add_game_plugin(Anm2Support
-    src/plugins/Anm2Support/anm2_support.cpp
+    src/plugins/FileSupport/Anm2Support/anm2_support.cpp
 )
 
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
