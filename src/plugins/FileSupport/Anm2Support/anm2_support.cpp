@@ -133,91 +133,100 @@ static bool parseAnm2(const QString& path, Animation& anim,
     QXmlStreamReader xml(&file);
 
     /* -- Spritesheets and Layers are in <Content> before <Animations> -- */
+    /* Two-level traversal: first find the root <AnimatedActor>,
+       then iterate its direct children (Content, Animations). */
     while (xml.readNextStartElement()) {
-        if (xml.name() == u"Content") {
+        if (xml.name() == u"AnimatedActor") {
+            /* Now iterate children of AnimatedActor */
             while (xml.readNextStartElement()) {
-                if (xml.name() == u"Spritesheets") {
+                if (xml.name() == u"Content") {
                     while (xml.readNextStartElement()) {
-                        if (xml.name() == u"Spritesheet") {
-                            Spritesheet ss;
-                            ss.id = xml.attributes().value("Id").toInt();
-                            ss.path = xml.attributes().value("Path").toString();
-                            spritesheets.append(ss);
-                            xml.skipCurrentElement();
-                        } else {
-                            xml.skipCurrentElement();
-                        }
-                    }
-                } else if (xml.name() == u"Layers") {
-                    while (xml.readNextStartElement()) {
-                        if (xml.name() == u"Layer") {
-                            LayerDef ld;
-                            ld.id = xml.attributes().value("Id").toInt();
-                            ld.name = xml.attributes().value("Name").toString();
-                            ld.spritesheet_id = xml.attributes().value("SpritesheetId").toInt();
-                            layer_defs.append(ld);
-                            xml.skipCurrentElement();
-                        } else {
-                            xml.skipCurrentElement();
-                        }
-                    }
-                } else {
-                    xml.skipCurrentElement();
-                }
-            }
-        } else if (xml.name() == u"Animations") {
-            /* Default animation name */
-            QString defaultAnim = xml.attributes().value("DefaultAnimation").toString();
-
-            while (xml.readNextStartElement()) {
-                if (xml.name() == u"Animation") {
-                    Animation a;
-                    a.name      = xml.attributes().value("Name").toString();
-                    a.frame_num = xml.attributes().value("FrameNum").toInt();
-                    a.loop      = xml.attributes().value("Loop").toString() != "false";
-
-                    while (xml.readNextStartElement()) {
-                        if (xml.name() == u"RootAnimation") {
+                        if (xml.name() == u"Spritesheets") {
                             while (xml.readNextStartElement()) {
-                                if (xml.name() == u"Frame") {
-                                    a.root_frame = parseFrame(xml);
+                                if (xml.name() == u"Spritesheet") {
+                                    Spritesheet ss;
+                                    ss.id = xml.attributes().value("Id").toInt();
+                                    ss.path = xml.attributes().value("Path").toString();
+                                    spritesheets.append(ss);
                                     xml.skipCurrentElement();
                                 } else {
                                     xml.skipCurrentElement();
                                 }
                             }
-                        } else if (xml.name() == u"LayerAnimations") {
+                        } else if (xml.name() == u"Layers") {
                             while (xml.readNextStartElement()) {
-                                if (xml.name() == u"LayerAnimation") {
-                                    LayerAnimation la;
-                                    la.layer_id = xml.attributes().value("LayerId").toInt();
-                                    la.visible  = xml.attributes().value("Visible").toString() != "false";
+                                if (xml.name() == u"Layer") {
+                                    LayerDef ld;
+                                    ld.id = xml.attributes().value("Id").toInt();
+                                    ld.name = xml.attributes().value("Name").toString();
+                                    ld.spritesheet_id = xml.attributes().value("SpritesheetId").toInt();
+                                    layer_defs.append(ld);
+                                    xml.skipCurrentElement();
+                                } else {
+                                    xml.skipCurrentElement();
+                                }
+                            }
+                        } else {
+                            xml.skipCurrentElement();
+                        }
+                    }
+                } else if (xml.name() == u"Animations") {
+                    /* Default animation name */
+                    QString defaultAnim = xml.attributes().value("DefaultAnimation").toString();
+
+                    while (xml.readNextStartElement()) {
+                        if (xml.name() == u"Animation") {
+                            Animation a;
+                            a.name      = xml.attributes().value("Name").toString();
+                            a.frame_num = xml.attributes().value("FrameNum").toInt();
+                            a.loop      = xml.attributes().value("Loop").toString() != "false";
+
+                            while (xml.readNextStartElement()) {
+                                if (xml.name() == u"RootAnimation") {
                                     while (xml.readNextStartElement()) {
                                         if (xml.name() == u"Frame") {
-                                            la.frames.append(parseFrame(xml));
+                                            a.root_frame = parseFrame(xml);
                                             xml.skipCurrentElement();
                                         } else {
                                             xml.skipCurrentElement();
                                         }
                                     }
-                                    a.layer_animations.append(la);
+                                } else if (xml.name() == u"LayerAnimations") {
+                                    while (xml.readNextStartElement()) {
+                                        if (xml.name() == u"LayerAnimation") {
+                                            LayerAnimation la;
+                                            la.layer_id = xml.attributes().value("LayerId").toInt();
+                                            la.visible  = xml.attributes().value("Visible").toString() != "false";
+                                            while (xml.readNextStartElement()) {
+                                                if (xml.name() == u"Frame") {
+                                                    la.frames.append(parseFrame(xml));
+                                                    xml.skipCurrentElement();
+                                                } else {
+                                                    xml.skipCurrentElement();
+                                                }
+                                            }
+                                            a.layer_animations.append(la);
+                                        } else {
+                                            xml.skipCurrentElement();
+                                        }
+                                    }
                                 } else {
                                     xml.skipCurrentElement();
                                 }
                             }
+
+                            /* Pick the default animation, or the first one */
+                            if (anim.name.isEmpty() || a.name == defaultAnim)
+                                anim = std::move(a);
                         } else {
                             xml.skipCurrentElement();
                         }
                     }
-
-                    /* Pick the default animation, or the first one */
-                    if (anim.name.isEmpty() || a.name == defaultAnim)
-                        anim = std::move(a);
                 } else {
                     xml.skipCurrentElement();
                 }
             }
-            break;  /* we parsed <Animations>, done */
+            break;  /* done with root element */
         } else {
             xml.skipCurrentElement();
         }
