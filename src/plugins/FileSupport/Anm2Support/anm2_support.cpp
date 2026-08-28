@@ -241,20 +241,38 @@ static bool parseAnm2(const QString& path, Animation& anim,
 
 static void loadSpritesheets(const QString& anm2_path,
                               QList<Spritesheet>& spritesheets) {
-    QDir base = QFileInfo(anm2_path).absoluteDir();
+    QDir anm2_dir = QFileInfo(anm2_path).absoluteDir();
+    /* .anm2 spritesheet paths are relative to gfx/ under the mod resources dir.
+       The .anm2 itself lives in resources/, so gfx/ is a sibling directory. */
+    QDir gfx_dir(anm2_dir.absoluteFilePath("gfx"));
+
+    /* Collect candidate base directories: mod gfx/, walk up looking for gfx/ */
+    QStringList base_dirs;
+    base_dirs << gfx_dir.absolutePath();
+    QDir walk = anm2_dir;
+    for (int i = 0; i < 5; ++i) {
+        QDir candidate(walk.absoluteFilePath("gfx"));
+        if (candidate.exists() && !base_dirs.contains(candidate.absolutePath()))
+            base_dirs << candidate.absolutePath();
+        if (!walk.cdUp()) break;
+    }
+
     for (auto& ss : spritesheets) {
-        /* Convert backslash paths to forward slash */
         QString rel = ss.path;
         rel.replace('\\', '/');
-        QString full = base.absoluteFilePath(rel);
-        if (!ss.pixmap.load(full)) {
-            /* Try without subdirectory — some mods put spritesheets
-               directly next to the .anm2 */
-            ss.pixmap.load(base.absoluteFilePath(QFileInfo(rel).fileName()));
+        bool loaded = false;
+        for (const auto& base : base_dirs) {
+            QString full = QDir(base).absoluteFilePath(rel);
+            if (ss.pixmap.load(full)) {
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded) {
+            ss.pixmap.load(anm2_dir.absoluteFilePath(rel));
         }
     }
 }
-
 /* --------------------------------------------------------------------------
  * Preview widget — renders animation frames
  * ------------------------------------------------------------------------ */
