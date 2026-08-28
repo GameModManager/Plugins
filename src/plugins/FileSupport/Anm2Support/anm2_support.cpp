@@ -243,43 +243,27 @@ static bool parseAnm2(const QString& path, Animation& anim,
    into segments and for each segment tries to find a matching entry in
    the parent directory (case-insensitive). Returns the resolved path
    or an empty string if not found. */
-static QString resolveCaseInsensitive(const QDir& base, const QString& rel) {
-    QStringList segments = rel.split('/', Qt::SkipEmptyParts);
-    QDir dir(base);
-    for (const auto& seg : segments) {
-        QStringList entries = dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
-        bool found = false;
-        for (const auto& entry : entries) {
-            if (entry.compare(seg, Qt::CaseInsensitive) == 0) {
-                dir.cd(entry);
-                found = true;
-                break;
-            }
-        }
-        if (!found) return {};
-    }
-    return dir.absolutePath();
-}
+/* Host-resolved file path -- set by gmm_register_v2, used by loadSpritesheets.
+   The host's PathResolver handles case-insensitive lookup on Linux. */
+static GmmResolveFileFn g_resolve_file = nullptr;
 
 static void loadSpritesheets(const QString& anm2_path,
                               QList<Spritesheet>& spritesheets) {
     QDir anm2_dir = QFileInfo(anm2_path).absoluteDir();
 
     /* Collect candidate base directories.
-       .anm2 spritesheet paths like "effects\errorkeeper.png" or
+       .anm2 spritesheet paths like "effects/errorkeeper.png" or
        "Bosses/Classic/Boss_025_Fistula.png" are relative to gfx/ under
        the mod's resources dir. Walk up from the .anm2 file looking for
        gfx/ siblings. Also include the .anm2's own directory (for files
        already inside gfx/). */
     QStringList base_dirs;
-    base_dirs << anm2_dir.absolutePath();  // same dir as .anm2
+    base_dirs << anm2_dir.absolutePath();
     QDir walk = anm2_dir;
     for (int i = 0; i < 5; ++i) {
-        /* Check if gfx/ exists as a child of this directory */
         QDir gfx_candidate(walk.absoluteFilePath("gfx"));
         if (gfx_candidate.exists() && !base_dirs.contains(gfx_candidate.absolutePath()))
             base_dirs << gfx_candidate.absolutePath();
-        /* Also check if this directory IS gfx/ (for .anm2 files inside gfx/) */
         if (walk.dirName().compare("gfx", Qt::CaseInsensitive) == 0) {
             if (!base_dirs.contains(walk.absolutePath()))
                 base_dirs << walk.absolutePath();
@@ -292,20 +276,29 @@ static void loadSpritesheets(const QString& anm2_path,
         rel.replace('\\', '/');
         bool loaded = false;
 
-        /* First try exact path (fast) */
-        for (const auto& base : base_dirs) {
-            QString full = QDir(base).absoluteFilePath(rel);
-            if (QFileInfo::exists(full) && ss.pixmap.load(full)) {
-                loaded = true;
-                break;
+        /* Use host resolver for case-insensitive lookup */
+        if (g_resolve_file) {
+            for (const auto& base : base_dirs) {
+                QByteArray root_bytes = base.toUtf8();
+                QByteArray rel_bytes = rel.toUtf8();
+                char* resolved = g_resolve_file(root_bytes.constData(),
+                                                rel_bytes.constData(), nullptr);
+                if (resolved) {
+                    QString path = QString::fromUtf8(resolved);
+                    free(resolved);
+                    if (ss.pixmap.load(path)) {
+                        loaded = true;
+                        break;
+                    }
+                }
             }
         }
 
-        /* Then try case-insensitive (slow but necessary for cross-platform mods) */
+        /* Fallback: try exact path (fast, no CI) */
         if (!loaded) {
             for (const auto& base : base_dirs) {
-                QString resolved = resolveCaseInsensitive(QDir(base), rel);
-                if (!resolved.isEmpty() && ss.pixmap.load(resolved)) {
+                QString full = QDir(base).absoluteFilePath(rel);
+                if (ss.pixmap.load(full)) {
                     loaded = true;
                     break;
                 }
@@ -313,6 +306,7 @@ static void loadSpritesheets(const QString& anm2_path,
         }
     }
 }
+
 /* --------------------------------------------------------------------------
  * Preview widget — renders animation frames
  * ------------------------------------------------------------------------ */
@@ -609,6 +603,9 @@ void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
 
     if (ctx->register_category)
         ctx->register_category(ctx, "File Support");
+
+    /* Capture host services */
+    g_resolve_file = ctx->resolve_file;
 
     if (ctx->register_preview) {
         ctx->register_preview(ctx, ".anm2", nullptr, anm2_preview, nullptr);
