@@ -239,21 +239,51 @@ static bool parseAnm2(const QString& path, Animation& anim,
  * Load spritesheet PNGs relative to the .anm2 file's directory
  * ------------------------------------------------------------------------ */
 
+/* Case-insensitive path resolution for Linux. Splits the relative path
+   into segments and for each segment tries to find a matching entry in
+   the parent directory (case-insensitive). Returns the resolved path
+   or an empty string if not found. */
+static QString resolveCaseInsensitive(const QDir& base, const QString& rel) {
+    QStringList segments = rel.split('/', Qt::SkipEmptyParts);
+    QDir dir(base);
+    for (const auto& seg : segments) {
+        QStringList entries = dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        bool found = false;
+        for (const auto& entry : entries) {
+            if (entry.compare(seg, Qt::CaseInsensitive) == 0) {
+                dir.cd(entry);
+                found = true;
+                break;
+            }
+        }
+        if (!found) return {};
+    }
+    return dir.absolutePath();
+}
+
 static void loadSpritesheets(const QString& anm2_path,
                               QList<Spritesheet>& spritesheets) {
     QDir anm2_dir = QFileInfo(anm2_path).absoluteDir();
-    /* .anm2 spritesheet paths are relative to gfx/ under the mod resources dir.
-       The .anm2 itself lives in resources/, so gfx/ is a sibling directory. */
-    QDir gfx_dir(anm2_dir.absoluteFilePath("gfx"));
 
-    /* Collect candidate base directories: mod gfx/, walk up looking for gfx/ */
+    /* Collect candidate base directories.
+       .anm2 spritesheet paths like "effects\errorkeeper.png" or
+       "Bosses/Classic/Boss_025_Fistula.png" are relative to gfx/ under
+       the mod's resources dir. Walk up from the .anm2 file looking for
+       gfx/ siblings. Also include the .anm2's own directory (for files
+       already inside gfx/). */
     QStringList base_dirs;
-    base_dirs << gfx_dir.absolutePath();
+    base_dirs << anm2_dir.absolutePath();  // same dir as .anm2
     QDir walk = anm2_dir;
     for (int i = 0; i < 5; ++i) {
-        QDir candidate(walk.absoluteFilePath("gfx"));
-        if (candidate.exists() && !base_dirs.contains(candidate.absolutePath()))
-            base_dirs << candidate.absolutePath();
+        /* Check if gfx/ exists as a child of this directory */
+        QDir gfx_candidate(walk.absoluteFilePath("gfx"));
+        if (gfx_candidate.exists() && !base_dirs.contains(gfx_candidate.absolutePath()))
+            base_dirs << gfx_candidate.absolutePath();
+        /* Also check if this directory IS gfx/ (for .anm2 files inside gfx/) */
+        if (walk.dirName().compare("gfx", Qt::CaseInsensitive) == 0) {
+            if (!base_dirs.contains(walk.absolutePath()))
+                base_dirs << walk.absolutePath();
+        }
         if (!walk.cdUp()) break;
     }
 
@@ -261,15 +291,25 @@ static void loadSpritesheets(const QString& anm2_path,
         QString rel = ss.path;
         rel.replace('\\', '/');
         bool loaded = false;
+
+        /* First try exact path (fast) */
         for (const auto& base : base_dirs) {
             QString full = QDir(base).absoluteFilePath(rel);
-            if (ss.pixmap.load(full)) {
+            if (QFileInfo::exists(full) && ss.pixmap.load(full)) {
                 loaded = true;
                 break;
             }
         }
+
+        /* Then try case-insensitive (slow but necessary for cross-platform mods) */
         if (!loaded) {
-            ss.pixmap.load(anm2_dir.absoluteFilePath(rel));
+            for (const auto& base : base_dirs) {
+                QString resolved = resolveCaseInsensitive(QDir(base), rel);
+                if (!resolved.isEmpty() && ss.pixmap.load(resolved)) {
+                    loaded = true;
+                    break;
+                }
+            }
         }
     }
 }
