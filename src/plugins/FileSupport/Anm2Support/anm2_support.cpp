@@ -1,8 +1,10 @@
 /**
  * Anm2Support Plugin — .anm2 animation preview (v2 ABI)
  *
- * Non-game-specific file support plugin. Provides a preview widget for
- * .anm2 files via the standard v2 register_preview interface.
+ * Parses The Binding of Isaac: Rebirth's XML-based .anm2 animation format
+ * and renders a frame-by-frame preview using the referenced spritesheet PNGs.
+ *
+ * Format reference: https://www.moddingofisaac.com/docs/rep/xml/Anm2_files.html
  *
  * Build: shared library (MODULE), links Qt6::Widgets for QWidget creation.
  */
@@ -12,296 +14,505 @@
 #include <QWidget>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QTimer>
 #include <QPainter>
 #include <QPixmap>
 #include <QFile>
-#include <QTextStream>
-#include <QStringList>
+#include <QFileInfo>
+#include <QDir>
+#include <QXmlStreamReader>
 #include <QString>
+#include <QStringList>
+#include <QList>
+#include <QVector>
+#include <QTransform>
+#include <QPainterPath>
+#include <map>
+#include <climits>
 
 /* --------------------------------------------------------------------------
- * Simple helpers (no external deps)
+ * Data structures matching the .anm2 spec
  * ------------------------------------------------------------------------ */
-static QString readAll(const QString& path) {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
-    QTextStream ts(&f);
-    return ts.readAll();
-}
 
-static QString attrVal(const QString& tag, const char* name) {
-    QString needle = QString(name) + "=\"";
-    int pos = tag.indexOf(needle);
-    if (pos < 0) return {};
-    pos += needle.length();
-    int end = tag.indexOf('"', pos);
-    if (end < 0) return {};
-    return tag.mid(pos, end - pos);
-}
+struct Spritesheet {
+    int id = -1;
+    QString path;   // relative path from game resources dir (backslash-separated)
+    QPixmap pixmap;  // loaded PNG
+};
 
-/* --------------------------------------------------------------------------
- * .anm2 preview widget
- * ------------------------------------------------------------------------ */
-/* -- Per-layer frame data (real Isaac .anm2 format) -- */
-struct Anm2FrameLayer {
-    int x = 0, y = 0;       // position
-    int cx = 0, cy = 0;     // crop origin
-    int cw = 0, ch = 0;     // crop size (drawn rect)
-    int pivot_x = 0, pivot_y = 0;
-    bool visible = true;
-    int layer_id = -1;
+struct LayerDef {
+    int id = -1;
+    QString name;
+    int spritesheet_id = -1;
 };
 
 struct Anm2Frame {
-    double delay = 100.0;
-    QList<Anm2FrameLayer> layers;
+    int x_position = 0;
+    int y_position = 0;
+    int x_pivot = 0;
+    int y_pivot = 0;
+    int x_crop = 0;
+    int y_crop = 0;
+    int width = 0;
+    int height = 0;
+    int x_scale = 100;
+    int y_scale = 100;
+    int delay = 1;          // duration in animation frames
+    bool visible = true;
+    int rotation = 0;       // degrees clockwise
+    int red_tint = 255;
+    int green_tint = 255;
+    int blue_tint = 255;
+    int alpha_tint = 255;
+    int red_offset = 0;
+    int green_offset = 0;
+    int blue_offset = 0;
+    bool interpolated = false;
 };
+
+struct LayerAnimation {
+    int layer_id = -1;
+    bool visible = true;
+    QList<Anm2Frame> frames;
+};
+
+struct Animation {
+    QString name;
+    int frame_num = 0;
+    bool loop = true;
+    Anm2Frame root_frame;                       // single base transform
+    QList<LayerAnimation> layer_animations;
+};
+
+/* --------------------------------------------------------------------------
+ * .anm2 parser using QXmlStreamReader
+ * ------------------------------------------------------------------------ */
+
+static Anm2Frame parseFrame(QXmlStreamReader& xml) {
+    Anm2Frame f;
+    auto attrs = xml.attributes();
+    f.x_position = attrs.value("XPosition").toInt();
+    f.y_position = attrs.value("YPosition").toInt();
+    f.x_pivot    = attrs.value("XPivot").toInt();
+    f.y_pivot    = attrs.value("YPivot").toInt();
+    f.x_crop     = attrs.value("XCrop").toInt();
+    f.y_crop     = attrs.value("YCrop").toInt();
+    f.width      = attrs.value("Width").toInt();
+    f.height     = attrs.value("Height").toInt();
+    f.x_scale    = attrs.value("XScale").toInt();
+    f.y_scale    = attrs.value("YScale").toInt();
+    if (f.x_scale == 0) f.x_scale = 100;
+    if (f.y_scale == 0) f.y_scale = 100;
+    f.delay      = attrs.value("Delay").toInt();
+    if (f.delay <= 0) f.delay = 1;
+    f.visible    = attrs.value("Visible").toString() != "false";
+    f.rotation   = attrs.value("Rotation").toInt();
+    f.red_tint   = attrs.value("RedTint").toInt();
+    f.green_tint = attrs.value("GreenTint").toInt();
+    f.blue_tint  = attrs.value("BlueTint").toInt();
+    f.alpha_tint = attrs.value("AlphaTint").toInt();
+    if (f.red_tint == 0)   f.red_tint = 255;
+    if (f.green_tint == 0) f.green_tint = 255;
+    if (f.blue_tint == 0)  f.blue_tint = 255;
+    if (f.alpha_tint == 0) f.alpha_tint = 255;
+    f.red_offset   = attrs.value("RedOffset").toInt();
+    f.green_offset = attrs.value("GreenOffset").toInt();
+    f.blue_offset  = attrs.value("BlueOffset").toInt();
+    f.interpolated = attrs.value("Interpolated").toString() == "true";
+    return f;
+}
+
+static bool parseAnm2(const QString& path, Animation& anim,
+                       QList<Spritesheet>& spritesheets,
+                       QList<LayerDef>& layer_defs) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+
+    QXmlStreamReader xml(&file);
+
+    /* -- Spritesheets and Layers are in <Content> before <Animations> -- */
+    while (xml.readNextStartElement()) {
+        if (xml.name() == u"Content") {
+            while (xml.readNextStartElement()) {
+                if (xml.name() == u"Spritesheets") {
+                    while (xml.readNextStartElement()) {
+                        if (xml.name() == u"Spritesheet") {
+                            Spritesheet ss;
+                            ss.id = xml.attributes().value("Id").toInt();
+                            ss.path = xml.attributes().value("Path").toString();
+                            spritesheets.append(ss);
+                            xml.skipCurrentElement();
+                        } else {
+                            xml.skipCurrentElement();
+                        }
+                    }
+                } else if (xml.name() == u"Layers") {
+                    while (xml.readNextStartElement()) {
+                        if (xml.name() == u"Layer") {
+                            LayerDef ld;
+                            ld.id = xml.attributes().value("Id").toInt();
+                            ld.name = xml.attributes().value("Name").toString();
+                            ld.spritesheet_id = xml.attributes().value("SpritesheetId").toInt();
+                            layer_defs.append(ld);
+                            xml.skipCurrentElement();
+                        } else {
+                            xml.skipCurrentElement();
+                        }
+                    }
+                } else {
+                    xml.skipCurrentElement();
+                }
+            }
+        } else if (xml.name() == u"Animations") {
+            /* Default animation name */
+            QString defaultAnim = xml.attributes().value("DefaultAnimation").toString();
+
+            while (xml.readNextStartElement()) {
+                if (xml.name() == u"Animation") {
+                    Animation a;
+                    a.name      = xml.attributes().value("Name").toString();
+                    a.frame_num = xml.attributes().value("FrameNum").toInt();
+                    a.loop      = xml.attributes().value("Loop").toString() != "false";
+
+                    while (xml.readNextStartElement()) {
+                        if (xml.name() == u"RootAnimation") {
+                            while (xml.readNextStartElement()) {
+                                if (xml.name() == u"Frame") {
+                                    a.root_frame = parseFrame(xml);
+                                    xml.skipCurrentElement();
+                                } else {
+                                    xml.skipCurrentElement();
+                                }
+                            }
+                        } else if (xml.name() == u"LayerAnimations") {
+                            while (xml.readNextStartElement()) {
+                                if (xml.name() == u"LayerAnimation") {
+                                    LayerAnimation la;
+                                    la.layer_id = xml.attributes().value("LayerId").toInt();
+                                    la.visible  = xml.attributes().value("Visible").toString() != "false";
+                                    while (xml.readNextStartElement()) {
+                                        if (xml.name() == u"Frame") {
+                                            la.frames.append(parseFrame(xml));
+                                            xml.skipCurrentElement();
+                                        } else {
+                                            xml.skipCurrentElement();
+                                        }
+                                    }
+                                    a.layer_animations.append(la);
+                                } else {
+                                    xml.skipCurrentElement();
+                                }
+                            }
+                        } else {
+                            xml.skipCurrentElement();
+                        }
+                    }
+
+                    /* Pick the default animation, or the first one */
+                    if (anim.name.isEmpty() || a.name == defaultAnim)
+                        anim = std::move(a);
+                } else {
+                    xml.skipCurrentElement();
+                }
+            }
+            break;  /* we parsed <Animations>, done */
+        } else {
+            xml.skipCurrentElement();
+        }
+    }
+
+    return anim.frame_num > 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Load spritesheet PNGs relative to the .anm2 file's directory
+ * ------------------------------------------------------------------------ */
+
+static void loadSpritesheets(const QString& anm2_path,
+                              QList<Spritesheet>& spritesheets) {
+    QDir base = QFileInfo(anm2_path).absoluteDir();
+    for (auto& ss : spritesheets) {
+        /* Convert backslash paths to forward slash */
+        QString rel = ss.path;
+        rel.replace('\\', '/');
+        QString full = base.absoluteFilePath(rel);
+        if (!ss.pixmap.load(full)) {
+            /* Try without subdirectory — some mods put spritesheets
+               directly next to the .anm2 */
+            ss.pixmap.load(base.absoluteFilePath(QFileInfo(rel).fileName()));
+        }
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * Preview widget — renders animation frames
+ * ------------------------------------------------------------------------ */
 
 class Anm2PreviewWidget : public QWidget {
 public:
     explicit Anm2PreviewWidget(const QString& path, QWidget* parent = nullptr)
-        : QWidget(parent), idx_(0) {
+        : QWidget(parent), step_(0), total_steps_(0) {
         auto* lay = new QVBoxLayout(this);
         lay->setContentsMargins(0, 0, 0, 0);
+
+        info_label_ = new QLabel(this);
+        info_label_->setAlignment(Qt::AlignCenter);
+        info_label_->setStyleSheet("color: gray;");
+        lay->addWidget(info_label_);
+
         label_ = new QLabel(this);
         label_->setAlignment(Qt::AlignCenter);
         lay->addWidget(label_);
 
+        /* Parse the .anm2 file */
+        Animation anim;
+        QList<Spritesheet> spritesheets;
+        QList<LayerDef> layer_defs;
+        if (!parseAnm2(path, anim, spritesheets, layer_defs)) {
+            info_label_->setText("Failed to parse .anm2 file");
+            return;
+        }
+
+        /* Load spritesheet PNGs */
+        loadSpritesheets(path, spritesheets);
+
+        /* Build spritesheet lookup by id */
+        for (const auto& ss : spritesheets)
+            sheet_by_id_[ss.id] = ss.pixmap;
+
+        /* Store layer defs for spritesheet lookup */
+        layer_defs_ = layer_defs;
+
+        /* Compute total animation steps.
+           Each LayerAnimation[i].frames has some number of entries.
+           The animation steps through them — when a layer runs out of
+           frames, it holds the last frame. Total steps = max across
+           all layer frame counts, capped by frame_num. */
+        int max_layer_frames = 0;
+        for (const auto& la : anim.layer_animations)
+            if (la.frames.size() > max_layer_frames)
+                max_layer_frames = la.frames.size();
+
+        total_steps_ = anim.frame_num;
+        if (total_steps_ <= 0)
+            total_steps_ = max_layer_frames;
+        if (total_steps_ <= 0) {
+            info_label_->setText("No animation frames found");
+            return;
+        }
+
+        anim_ = std::move(anim);
+        has_data_ = true;
+
+        /* Default canvas: 400x300 — will be adjusted per frame */
+        canvas_w_ = 400;
+        canvas_h_ = 300;
+
+        /* FPS from file — default 18 */
+        int fps = 18;
+        /* Try reading FPS from the Info tag (already parsed, we re-read here) */
         QFile f(path);
-        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
-        QString xml = QTextStream(&f).readAll();
-
-        /* Parse <Info Fps="18" .../> for default frame delay */
-        int infoPos = xml.indexOf("<Info");
-        if (infoPos >= 0) {
-            int infoEnd = xml.indexOf("/>", infoPos);
-            if (infoEnd < 0) infoEnd = xml.indexOf("\n", infoPos);
-            if (infoEnd < 0) infoEnd = xml.length();
-            QString infoLine = xml.mid(infoPos, infoEnd - infoPos);
-            int fps = attrVal(infoLine, "Fps").toInt();
-            if (fps > 0) default_delay_ = 1000.0 / fps;
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QXmlStreamReader xr(&f);
+            while (xr.readNextStartElement()) {
+                if (xr.name() == u"Info") {
+                    fps = xr.attributes().value("Fps").toInt();
+                    if (fps <= 0) fps = 18;
+                    break;
+                }
+                xr.skipCurrentElement();
+            }
         }
+        frame_interval_ms_ = 1000 / fps;
 
-        /* Parse canvas size from <Info> or <Animation> (Isaac doesn't have
-           Width/Height; use a reasonable default — spritesheet sizes vary). */
-        cw_ = 400;
-        ch_ = 300;
+        info_label_->setText(QString("%1  [%2 frames, %3 fps]")
+                                 .arg(anim_.name)
+                                 .arg(total_steps_)
+                                 .arg(fps));
 
-        /* Parse <RootAnimation> — the base frame for all layer animations */
-        Anm2Frame rootFrame;
-        rootFrame.delay = default_delay_;
-        parseRootAnimation(xml, rootFrame);
-
-        /* Parse each <LayerAnimation> and merge with root */
-        parseLayerAnimations(xml, rootFrame);
-
-        if (!frames_.isEmpty()) {
-            renderFrame(0);
-            timer_ = new QTimer(this);
-            connect(timer_, &QTimer::timeout, this, &Anm2PreviewWidget::next);
-            timer_->start((int)frames_[0].delay);
-        }
+        renderStep(0);
+        timer_ = new QTimer(this);
+        connect(timer_, &QTimer::timeout, this, &Anm2PreviewWidget::nextStep);
+        timer_->start(frame_interval_ms_);
     }
 
 private:
-    /* Extract a single attribute value from an XML tag string */
-    static QString attr(const QString& tag, const char* name) {
-        return attrVal(tag, name);
-    }
-
-    /* Find the extent of an XML element by matching open→close tags.
-       Handles self-closing tags (<Foo ... />) and nested tags.
-       Returns the position right after the closing tag / self-close. */
-    static int findElementEnd(const QString& xml, int openPos) {
-        /* Check for self-closing: look for /> before the next newline or > */
-        int scanEnd = xml.indexOf('\n', openPos);
-        if (scanEnd < 0) scanEnd = xml.length();
-        int selfClose = xml.indexOf("/>", openPos);
-        if (selfClose >= 0 && selfClose < scanEnd)
-            return selfClose + 2;
-
-        /* Not self-closing — find matching close tag.
-           Extract the tag name first. */
-        int nameStart = openPos + 1;
-        int nameEnd = xml.indexOf(QChar(' '), nameStart);
-        if (nameEnd < 0) nameEnd = xml.indexOf('>', nameStart);
-        if (nameEnd < 0) return scanEnd;
-        QString tagName = xml.mid(nameStart, nameEnd - nameStart);
-
-        QString closeTag = "</" + tagName + ">";
-        int depth = 1;
-        int pos = nameEnd;
-        while (depth > 0 && pos < xml.length()) {
-            int nextOpen = xml.indexOf("<" + tagName, pos);
-            int nextClose = xml.indexOf(closeTag, pos);
-            if (nextClose < 0) return xml.length();
-            if (nextOpen >= 0 && nextOpen < nextClose) {
-                /* Check it's not self-closing */
-                int sc = xml.indexOf("/>", nextOpen);
-                if (sc >= 0 && sc < nextClose && sc < nextOpen + 200) {
-                    pos = sc + 2;
-                } else {
-                    depth++;
-                    pos = nextOpen + tagName.length() + 1;
-                }
-            } else {
-                depth--;
-                if (depth == 0) return nextClose + closeTag.length();
-                pos = nextClose + closeTag.length();
+    /* Find the spritesheet pixmap for a given layer id */
+    QPixmap* sheetForLayer(int layer_id) {
+        for (const auto& ld : layer_defs_) {
+            if (ld.id == layer_id) {
+                auto it = sheet_by_id_.find(ld.spritesheet_id);
+                if (it != sheet_by_id_.end() && !it->second.isNull())
+                    return &it->second;
             }
         }
-        return xml.length();
+        return nullptr;
     }
 
-    /* Parse <RootAnimation> → single base frame */
-    void parseRootAnimation(const QString& xml, Anm2Frame& rootFrame) {
-        int raPos = xml.indexOf("<RootAnimation");
-        if (raPos < 0) return;
-        int raEnd = findElementEnd(xml, raPos);
-        QString raBody = xml.mid(raPos, raEnd - raPos);
+    void renderStep(int step) {
+        if (!has_data_ || step < 0 || step >= total_steps_)
+            return;
 
-        /* <Frame XPosition="..." ... /> */
-        int fPos = raBody.indexOf("<Frame");
-        if (fPos < 0) return;
-        int fEnd = findElementEnd(raBody, fPos);
-        QString fTag = raBody.mid(fPos, fEnd - fPos);
+        /* -- Pass 1: compute bounding box -- */
+        int min_x = INT_MAX, min_y = INT_MAX;
+        int max_x = INT_MIN, max_y = INT_MIN;
 
-        Anm2FrameLayer fl;
-        fl.x = attr(fTag, "XPosition").toInt();
-        fl.y = attr(fTag, "YPosition").toInt();
-        fl.cx = attr(fTag, "XCrop").toInt();
-        fl.cy = attr(fTag, "YCrop").toInt();
-        fl.cw = attr(fTag, "Width").toInt();
-        fl.ch = attr(fTag, "Height").toInt();
-        fl.pivot_x = attr(fTag, "XPivot").toInt();
-        fl.pivot_y = attr(fTag, "YPivot").toInt();
-        fl.visible = (attr(fTag, "Visible") != "false");
-        fl.layer_id = -1;
-        rootFrame.layers.append(fl);
+        auto updateBounds = [&](int x, int y, int w, int h) {
+            if (x < min_x) min_x = x;
+            if (y < min_y) min_y = y;
+            if (x + w > max_x) max_x = x + w;
+            if (y + h > max_y) max_y = y + h;
+        };
 
-        double d = attr(fTag, "Delay").toDouble();
-        if (d > 0) rootFrame.delay = d;
-    }
+        /* Root frame covers entire canvas */
+        updateBounds(anim_.root_frame.x_position,
+                     anim_.root_frame.y_position,
+                     canvas_w_, canvas_h_);
 
-    /* Parse <LayerAnimations> → each <LayerAnimation> has N <Frame/>s */
-    void parseLayerAnimations(const QString& xml, const Anm2Frame& rootFrame) {
-        int laPos = xml.indexOf("<LayerAnimations");
-        if (laPos < 0) return;
-        int laEnd = findElementEnd(xml, laPos);
-        QString laBody = xml.mid(laPos, laEnd - laPos);
+        for (const auto& la : anim_.layer_animations) {
+            if (!la.visible) continue;
+            int fi = qMin(step, la.frames.size() - 1);
+            if (fi < 0) continue;
+            const Anm2Frame& fr = la.frames[fi];
+            if (!fr.visible) continue;
 
-        /* Each <LayerAnimation LayerId="0"> */
-        int pos = 0;
-        while (true) {
-            int layerStart = laBody.indexOf("<LayerAnimation", pos);
-            if (layerStart < 0) break;
-            int layerEnd = findElementEnd(laBody, layerStart);
-            QString layerBlock = laBody.mid(layerStart, layerEnd - layerStart);
-            int layerId = attr(layerBlock, "LayerId").toInt();
-            pos = layerEnd;
-
-            /* Parse all <Frame/> inside this LayerAnimation.
-               Isaac puts one Frame per layer per animation frame. */
-            int fpos = 0;
-            while (true) {
-                int fStart = layerBlock.indexOf("<Frame", fpos);
-                if (fStart < 0) break;
-                int fEnd = findElementEnd(layerBlock, fStart);
-                QString fTag = layerBlock.mid(fStart, fEnd - fStart);
-                fpos = fEnd;
-
-                Anm2FrameLayer fl;
-                fl.x = attr(fTag, "XPosition").toInt();
-                fl.y = attr(fTag, "YPosition").toInt();
-                fl.cx = attr(fTag, "XCrop").toInt();
-                fl.cy = attr(fTag, "YCrop").toInt();
-                fl.cw = attr(fTag, "Width").toInt();
-                fl.ch = attr(fTag, "Height").toInt();
-                fl.pivot_x = attr(fTag, "XPivot").toInt();
-                fl.pivot_y = attr(fTag, "YPivot").toInt();
-                fl.visible = (attr(fTag, "Visible") != "false");
-                fl.layer_id = layerId;
-
-                double d = attr(fTag, "Delay").toDouble();
-
-                /* Each Frame in a LayerAnimation = one animation frame.
-                   We build one Anm2Frame per unique delay-index by merging
-                   all layer frames that share the same position in the
-                   sequence.  Simple approach: one Anm2Frame per <Frame>
-                   entry — the animation steps through them. */
-                Anm2Frame af = rootFrame;
-                af.delay = (d > 0) ? d : rootFrame.delay;
-                af.layers.append(fl);
-                frames_.append(af);
-            }
+            int rx = fr.x_position - fr.x_pivot + fr.x_crop;
+            int ry = fr.y_position - fr.y_pivot + fr.y_crop;
+            int rw = fr.width > 0 ? fr.width : 64;
+            int rh = fr.height > 0 ? fr.height : 64;
+            updateBounds(rx, ry, rw, rh);
         }
 
-        /* If no layer animations were found, fall back to root-only */
-        if (frames_.isEmpty()) {
-            frames_.append(rootFrame);
-        }
-    }
+        if (max_x <= min_x) max_x = min_x + canvas_w_;
+        if (max_y <= min_y) max_y = min_y + canvas_h_;
 
-    void renderFrame(int i) {
-        if (i < 0 || i >= frames_.size()) return;
-        const Anm2Frame& frame = frames_[i];
+        /* Add padding */
+        int pad = 10;
+        min_x -= pad; min_y -= pad;
+        max_x += pad; max_y += pad;
 
-        /* Compute bounding box from all visible layers */
-        int maxX = 0, maxY = 0;
-        for (const auto& fl : frame.layers) {
-            if (!fl.visible || fl.cw <= 0 || fl.ch <= 0) continue;
-            int rx = fl.x - fl.pivot_x + fl.cx;
-            int ry = fl.y - fl.pivot_y + fl.cy;
-            if (rx + fl.cw > maxX) maxX = rx + fl.cw;
-            if (ry + fl.ch > maxY) maxY = ry + fl.ch;
-        }
-        if (maxX <= 0) maxX = cw_;
-        if (maxY <= 0) maxY = ch_;
+        int w = max_x - min_x;
+        int h = max_y - min_y;
+        if (w <= 0 || h <= 0) { w = 400; h = 300; }
 
-        QPixmap pm(maxX, maxY);
+        QPixmap pm(w, h);
         pm.fill(Qt::transparent);
         QPainter p(&pm);
-        p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        p.setRenderHint(QPainter::Antialiasing, false);
 
-        /* Draw layers back-to-front by layer_id */
-        QList<Anm2FrameLayer> sorted = frame.layers;
-        std::sort(sorted.begin(), sorted.end(),
-                  [](const Anm2FrameLayer& a, const Anm2FrameLayer& b) {
-                      return a.layer_id < b.layer_id;
-                  });
+        /* -- Pass 2: render layers in order -- */
+        int origin_x = -min_x;
+        int origin_y = -min_y;
 
-        int colorIdx = 0;
-        static const QColor palette[] = {
-            QColor(120, 120, 160), QColor(140, 110, 150), QColor(100, 140, 140),
-            QColor(160, 120, 110), QColor(110, 150, 120), QColor(150, 130, 140)
-        };
-        for (const auto& fl : sorted) {
-            if (!fl.visible || fl.cw <= 0 || fl.ch <= 0) continue;
-            int rx = fl.x - fl.pivot_x + fl.cx;
-            int ry = fl.y - fl.pivot_y + fl.cy;
-            QColor col = palette[colorIdx % 6];
-            p.fillRect(rx, ry, fl.cw, fl.ch, col);
-            p.setPen(col.darker(130));
-            p.drawRect(rx, ry, fl.cw, fl.ch);
-            colorIdx++;
+        /* Apply root transform */
+        double root_sx = anim_.root_frame.x_scale / 100.0;
+        double root_sy = anim_.root_frame.y_scale / 100.0;
+
+        for (const auto& la : anim_.layer_animations) {
+            if (!la.visible) continue;
+            int fi = qMin(step, la.frames.size() - 1);
+            if (fi < 0) continue;
+            const Anm2Frame& fr = la.frames[fi];
+            if (!fr.visible) continue;
+
+            /* Find spritesheet for this layer */
+            QPixmap* sheet = sheetForLayer(la.layer_id);
+
+            /* Compute draw position */
+            double sx = fr.x_scale / 100.0 * root_sx;
+            double sy = fr.y_scale / 100.0 * root_sy;
+            int draw_x = origin_x + fr.x_position - fr.x_pivot;
+            int draw_y = origin_y + fr.y_position - fr.y_pivot;
+            int crop_w = fr.width;
+            int crop_h = fr.height;
+
+            /* If no crop specified, use full spritesheet or default size */
+            if (sheet && crop_w <= 0) crop_w = sheet->width();
+            if (sheet && crop_h <= 0) crop_h = sheet->height();
+            if (crop_w <= 0) crop_w = 64;
+            if (crop_h <= 0) crop_h = 64;
+
+            /* Draw the sprite or a colored placeholder */
+            if (sheet && !sheet->isNull()) {
+                QPixmap cropped = sheet->copy(fr.x_crop, fr.y_crop, crop_w, crop_h);
+                if (!cropped.isNull()) {
+                    /* Apply scale */
+                    int scaled_w = qMax(1, (int)(crop_w * sx));
+                    int scaled_h = qMax(1, (int)(crop_h * sy));
+                    QPixmap scaled = cropped.scaled(scaled_w, scaled_h,
+                                                    Qt::IgnoreAspectRatio,
+                                                    Qt::FastTransformation);
+
+                    /* Apply tint */
+                    if (fr.red_tint != 255 || fr.green_tint != 255 ||
+                        fr.blue_tint != 255 || fr.alpha_tint != 255 ||
+                        fr.red_offset != 0 || fr.green_offset != 0 ||
+                        fr.blue_offset != 0) {
+                        QPainter sp(&scaled);
+                        sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                        QColor tint(qBound(0, fr.red_tint + fr.red_offset, 255),
+                                    qBound(0, fr.green_tint + fr.green_offset, 255),
+                                    qBound(0, fr.blue_tint + fr.blue_offset, 255),
+                                    qBound(0, fr.alpha_tint, 255));
+                        sp.fillRect(scaled.rect(), tint);
+                        sp.end();
+                    }
+
+                    /* Apply rotation */
+                    if (fr.rotation != 0) {
+                        QTransform t;
+                        t.rotate(fr.rotation);
+                        scaled = scaled.transformed(t, Qt::SmoothTransformation);
+                    }
+
+                    p.drawPixmap(draw_x, draw_y, scaled);
+                }
+            } else {
+                /* No spritesheet — draw colored rectangle placeholder */
+                static const QColor kPalette[] = {
+                    QColor(100, 120, 180), QColor(140, 100, 160),
+                    QColor(100, 160, 140), QColor(180, 120, 100),
+                    QColor(120, 140, 160), QColor(160, 130, 130),
+                };
+                int ci = qAbs(la.layer_id) % 6;
+                int sw = qMax(1, (int)(crop_w * sx));
+                int sh = qMax(1, (int)(crop_h * sy));
+                p.fillRect(draw_x, draw_y, sw, sh, kPalette[ci]);
+                p.setPen(kPalette[ci].darker(130));
+                p.drawRect(draw_x, draw_y, sw, sh);
+            }
         }
 
+        p.end();
         label_->setPixmap(pm);
     }
 
-    void next() {
-        if (frames_.isEmpty()) return;
-        idx_ = (idx_ + 1) % frames_.size();
-        renderFrame(idx_);
-        timer_->start((int)frames_[idx_].delay);
+    void nextStep() {
+        step_ = (step_ + 1) % total_steps_;
+        renderStep(step_);
+        timer_->start(frame_interval_ms_);
     }
 
+    /* UI */
+    QLabel* info_label_ = nullptr;
     QLabel* label_ = nullptr;
     QTimer* timer_ = nullptr;
-    int idx_ = 0, cw_ = 400, ch_ = 300;
-    double default_delay_ = 100.0;
-    QList<Anm2Frame> frames_;
+
+    /* Animation data */
+    bool has_data_ = false;
+    Animation anim_;
+    QList<LayerDef> layer_defs_;
+    std::map<int, QPixmap> sheet_by_id_;
+    int canvas_w_ = 400;
+    int canvas_h_ = 300;
+
+    /* Playback state */
+    int step_ = 0;
+    int total_steps_ = 0;
+    int frame_interval_ms_ = 55;  /* ~18 fps default */
 };
 
 /* --------------------------------------------------------------------------
@@ -325,8 +536,8 @@ void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
     ctx->register_plugin(ctx, {
         .name = "ANM2 Support",
         .author = "GameModManager Team",
-        .version = "1.0.0",
-        .description = "ANM2 animation file preview"
+        .version = "2.0.0",
+        .description = "ANM2 animation file preview (The Binding of Isaac: Rebirth)"
     });
 
     if (ctx->register_category)
