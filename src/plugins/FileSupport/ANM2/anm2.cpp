@@ -36,8 +36,8 @@
 #include <QWidget>
 #include <QXmlStreamReader>
 #include <algorithm>
-#include <cmath>
 #include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -138,8 +138,7 @@ static int track_length_get(const QList<Anm2Frame> &keyframes) {
 /* On-demand interpolated frame synthesis for a single layer's keyframes.
  * Finds the keyframe at the given time and interpolates between it and the
  * next keyframe when interpolation is enabled. */
-static Anm2Frame frame_generate(const QList<Anm2Frame> &keyframes,
-                                float time) {
+static Anm2Frame frame_generate(const QList<Anm2Frame> &keyframes, float time) {
   Anm2Frame frame;
   if (keyframes.isEmpty())
     return frame;
@@ -174,34 +173,18 @@ static Anm2Frame frame_generate(const QList<Anm2Frame> &keyframes,
         frame.y_position =
             qRound(frame.y_position +
                    amount * (frameNext->y_position - frame.y_position));
-        frame.x_pivot =
-            qRound(frame.x_pivot +
-                   amount * (frameNext->x_pivot - frame.x_pivot));
-        frame.y_pivot =
-            qRound(frame.y_pivot +
-                   amount * (frameNext->y_pivot - frame.y_pivot));
-        frame.x_crop =
-            qRound(frame.x_crop +
-                   amount * (frameNext->x_crop - frame.x_crop));
-        frame.y_crop =
-            qRound(frame.y_crop +
-                   amount * (frameNext->y_crop - frame.y_crop));
-        frame.width =
-            qRound(frame.width + amount * (frameNext->width - frame.width));
-        frame.height = qRound(frame.height +
-                              amount * (frameNext->height - frame.height));
-        frame.x_scale =
-            qRound(frame.x_scale +
-                   amount * (frameNext->x_scale - frame.x_scale));
-        frame.y_scale =
-            qRound(frame.y_scale +
-                   amount * (frameNext->y_scale - frame.y_scale));
-        frame.rotation =
-            qRound(frame.rotation +
-                   amount * (frameNext->rotation - frame.rotation));
-        frame.red_tint =
-            qRound(frame.red_tint +
-                   amount * (frameNext->red_tint - frame.red_tint));
+        frame.x_pivot = qRound(frame.x_pivot +
+                               amount * (frameNext->x_pivot - frame.x_pivot));
+        frame.y_pivot = qRound(frame.y_pivot +
+                               amount * (frameNext->y_pivot - frame.y_pivot));
+        frame.x_scale = qRound(frame.x_scale +
+                               amount * (frameNext->x_scale - frame.x_scale));
+        frame.y_scale = qRound(frame.y_scale +
+                               amount * (frameNext->y_scale - frame.y_scale));
+        frame.rotation = qRound(
+            frame.rotation + amount * (frameNext->rotation - frame.rotation));
+        frame.red_tint = qRound(
+            frame.red_tint + amount * (frameNext->red_tint - frame.red_tint));
         frame.green_tint =
             qRound(frame.green_tint +
                    amount * (frameNext->green_tint - frame.green_tint));
@@ -274,13 +257,13 @@ static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   f.green_tint = attrs.value("GreenTint").toInt();
   f.blue_tint = attrs.value("BlueTint").toInt();
   f.alpha_tint = attrs.value("AlphaTint").toInt();
-  if (f.red_tint == 0)
+  if (!attrs.hasAttribute("RedTint"))
     f.red_tint = 255;
-  if (f.green_tint == 0)
+  if (!attrs.hasAttribute("GreenTint"))
     f.green_tint = 255;
-  if (f.blue_tint == 0)
+  if (!attrs.hasAttribute("BlueTint"))
     f.blue_tint = 255;
-  if (f.alpha_tint == 0)
+  if (!attrs.hasAttribute("AlphaTint"))
     f.alpha_tint = 255;
   f.red_offset = attrs.value("RedOffset").toInt();
   f.green_offset = attrs.value("GreenOffset").toInt();
@@ -359,8 +342,7 @@ static bool parseAnm2(const QString &path, Animation &anim,
                   while (xml.readNextStartElement()) {
                     if (xml.name() == u"LayerAnimation") {
                       LayerAnimation la;
-                      la.layer_id =
-                          xml.attributes().value("LayerId").toInt();
+                      la.layer_id = xml.attributes().value("LayerId").toInt();
                       la.visible =
                           xml.attributes().value("Visible").toString() !=
                           "false";
@@ -541,11 +523,13 @@ static std::pair<int, int> computeAnimationRect(const Animation &a,
     Anm2Frame rootFrame = frame_generate({a.root_frame}, t);
     QTransform rootTransform;
     rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
-    rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
     rootTransform.rotate(rootFrame.rotation);
+    rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
 
     for (const auto &la : a.layer_animations) {
       if (!la.visible)
+        continue;
+      if (la.frames.isEmpty())
         continue;
       Anm2Frame frame = frame_generate(la.frames, t);
       if (!frame.visible)
@@ -554,12 +538,11 @@ static std::pair<int, int> computeAnimationRect(const Animation &a,
       int crop_w = frame.width > 0 ? frame.width : 64;
       int crop_h = frame.height > 0 ? frame.height : 64;
 
-      /* Per-layer transform: translate(position - pivot), scale, rotate */
       QTransform layerTransform;
-      layerTransform.translate(frame.x_position - frame.x_pivot,
-                               frame.y_position - frame.y_pivot);
-      layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+      layerTransform.translate(frame.x_position, frame.y_position);
       layerTransform.rotate(frame.rotation);
+      layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+      layerTransform.translate(-frame.x_pivot, -frame.y_pivot);
 
       QTransform fullTransform = rootTransform * layerTransform;
 
@@ -591,8 +574,8 @@ static std::pair<int, int> computeAnimationRect(const Animation &a,
 
 static QImage renderFrameAtTime(const Animation &a,
                                 const QList<LayerDef> &layer_defs,
-                                std::map<int, QPixmap> &sheet_by_id,
-                                float time, int cw, int ch) {
+                                std::map<int, QPixmap> &sheet_by_id, float time,
+                                int cw, int ch) {
   QImage canvas(cw, ch, QImage::Format_RGBA8888);
   canvas.fill(Qt::transparent);
   QPainter p(&canvas);
@@ -607,11 +590,13 @@ static QImage renderFrameAtTime(const Animation &a,
       Anm2Frame rootFrame = frame_generate({a.root_frame}, t);
       QTransform rootTransform;
       rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
-      rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
       rootTransform.rotate(rootFrame.rotation);
+      rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
 
       for (const auto &la : a.layer_animations) {
         if (!la.visible)
+          continue;
+        if (la.frames.isEmpty())
           continue;
         Anm2Frame frame = frame_generate(la.frames, t);
         if (!frame.visible)
@@ -619,10 +604,10 @@ static QImage renderFrameAtTime(const Animation &a,
         int crop_w = frame.width > 0 ? frame.width : 64;
         int crop_h = frame.height > 0 ? frame.height : 64;
         QTransform layerTransform;
-        layerTransform.translate(frame.x_position - frame.x_pivot,
-                                 frame.y_position - frame.y_pivot);
-        layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+        layerTransform.translate(frame.x_position, frame.y_position);
         layerTransform.rotate(frame.rotation);
+        layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+        layerTransform.translate(-frame.x_pivot, -frame.y_pivot);
         QTransform fullTransform = rootTransform * layerTransform;
         constexpr int CORNERS[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
         for (const auto &corner : CORNERS) {
@@ -640,13 +625,16 @@ static QImage renderFrameAtTime(const Animation &a,
   /* Root transform at this time */
   Anm2Frame rootFrame = frame_generate({a.root_frame}, time);
   QTransform rootTransform;
+  rootTransform.translate(origin_x, origin_y);
   rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
-  rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
   rootTransform.rotate(rootFrame.rotation);
+  rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
 
   /* Render each layer using on-demand interpolated frames */
   for (const auto &la : a.layer_animations) {
     if (!la.visible)
+      continue;
+    if (la.frames.isEmpty())
       continue;
 
     /* Generate interpolated frame for this layer at this time */
@@ -684,15 +672,13 @@ static QImage renderFrameAtTime(const Animation &a,
       if (!cropped.isNull()) {
         int scaled_w = qMax(1, (int)(crop_w * sx));
         int scaled_h = qMax(1, (int)(crop_h * sy));
-        QPixmap scaled =
-            cropped.scaled(scaled_w, scaled_h, Qt::IgnoreAspectRatio,
-                           Qt::FastTransformation);
+        QPixmap scaled = cropped.scaled(
+            scaled_w, scaled_h, Qt::IgnoreAspectRatio, Qt::FastTransformation);
 
         /* Apply tint */
-        if (fr.red_tint != 255 || fr.green_tint != 255 ||
-            fr.blue_tint != 255 || fr.alpha_tint != 255 ||
-            fr.red_offset != 0 || fr.green_offset != 0 ||
-            fr.blue_offset != 0) {
+        if (fr.red_tint != 255 || fr.green_tint != 255 || fr.blue_tint != 255 ||
+            fr.alpha_tint != 255 || fr.red_offset != 0 ||
+            fr.green_offset != 0 || fr.blue_offset != 0) {
           QPainter sp(&scaled);
           sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
           QColor tint(qBound(0, fr.red_tint + fr.red_offset, 255),
@@ -703,42 +689,40 @@ static QImage renderFrameAtTime(const Animation &a,
           sp.end();
         }
 
-        /* Per-layer transform using QTransform (correct transforms) */
         QTransform layerTransform;
-        layerTransform.translate(fr.x_position - fr.x_pivot,
-                                 fr.y_position - fr.y_pivot);
-        layerTransform.scale(sx, sy);
+        layerTransform.translate(fr.x_position, fr.y_position);
         layerTransform.rotate(fr.rotation);
+        layerTransform.scale(sx, sy);
+        layerTransform.translate(-fr.x_pivot, -fr.y_pivot);
 
         QTransform fullTransform = rootTransform * layerTransform;
 
         /* Apply the full transform via drawPixmap with QTransform */
         p.setTransform(fullTransform, false);
-        p.drawPixmap(origin_x, origin_y, scaled);
+        p.drawPixmap(0, 0, scaled);
         p.resetTransform();
       }
     } else {
       /* No spritesheet -- draw colored rectangle placeholder */
       static const QColor kPalette[] = {
-          QColor(100, 120, 180), QColor(140, 100, 160),
-          QColor(100, 160, 140), QColor(180, 120, 100),
-          QColor(120, 140, 160), QColor(160, 130, 130),
+          QColor(100, 120, 180), QColor(140, 100, 160), QColor(100, 160, 140),
+          QColor(180, 120, 100), QColor(120, 140, 160), QColor(160, 130, 130),
       };
       int ci = qAbs(la.layer_id) % 6;
       int sw = qMax(1, (int)(crop_w * sx));
       int sh = qMax(1, (int)(crop_h * sy));
 
       QTransform layerTransform;
-      layerTransform.translate(fr.x_position - fr.x_pivot,
-                               fr.y_position - fr.y_pivot);
-      layerTransform.scale(sx, sy);
+      layerTransform.translate(fr.x_position, fr.y_position);
       layerTransform.rotate(fr.rotation);
+      layerTransform.scale(sx, sy);
+      layerTransform.translate(-fr.x_pivot, -fr.y_pivot);
 
       QTransform fullTransform = rootTransform * layerTransform;
       p.setTransform(fullTransform, false);
-      p.fillRect(origin_x, origin_y, sw, sh, kPalette[ci]);
+      p.fillRect(0, 0, sw, sh, kPalette[ci]);
       p.setPen(kPalette[ci].darker(130));
-      p.drawRect(origin_x, origin_y, sw, sh);
+      p.drawRect(0, 0, sw, sh);
       p.resetTransform();
     }
   }
@@ -773,7 +757,8 @@ static uint8_t *anm2_render_frame_cb(void *raw_animation, float time_ms,
 
   /* Clamp time to valid range */
   float total_time = static_cast<float>(data->total_frames);
-  float t = std::clamp(time_ms, 0.0f, total_time > 0 ? total_time - 1.0f : 0.0f);
+  float t =
+      std::clamp(time_ms, 0.0f, total_time > 0 ? total_time - 1.0f : 0.0f);
 
   QImage frame =
       renderFrameAtTime(data->anim, data->layer_defs, data->sheet_by_id, t,
@@ -843,8 +828,9 @@ static int anm2_parse(const char *file_path_c, const char *base_dir_c,
         GmmAnimationFrameV2 &cf = def_frames[step];
         cf.delay_ms = 1000.0f / static_cast<float>(fps);
 
-        QImage canvas = renderFrameAtTime(anim, layer_defs, sheet_by_id,
-                                          static_cast<float>(step), def_cw, def_ch);
+        QImage canvas =
+            renderFrameAtTime(anim, layer_defs, sheet_by_id,
+                              static_cast<float>(step), def_cw, def_ch);
         QImage rgba = canvas.convertToFormat(QImage::Format_RGBA8888);
 
         cf.layer_count = 1;
@@ -1052,9 +1038,8 @@ private:
     if (!has_data_)
       return;
 
-    QImage canvas =
-        renderFrameAtTime(anim_, layer_defs_, sheet_by_id_, time,
-                          canvas_w_, canvas_h_);
+    QImage canvas = renderFrameAtTime(anim_, layer_defs_, sheet_by_id_, time,
+                                      canvas_w_, canvas_h_);
     label_->setPixmap(QPixmap::fromImage(canvas));
   }
 
