@@ -1,10 +1,13 @@
 /**
- * ANM2 Plugin — .anm2 animation preview + parser (v2 ABI)
+ * ANM2 Plugin -- .anm2 animation preview + parser (v2 ABI)
  *
  * Parses The Binding of Isaac: Rebirth's XML-based .anm2 animation format
  * and provides both:
  *   1. A standalone QWidget preview (register_preview)
  *   2. An AnimationParser returning raw RGBA pixels (register_animation_parser)
+ *
+ * Uses anm2ed's on-demand rendering model for proper interpolation,
+ * fixed canvas size, and correct root transforms.
  *
  * Format reference: https://www.moddingofisaac.com/docs/rep/xml/Anm2_files.html
  *
@@ -23,6 +26,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
+#include <QPointF>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -31,11 +35,20 @@
 #include <QVector>
 #include <QWidget>
 #include <QXmlStreamReader>
+#include <algorithm>
+#include <cmath>
 #include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
 #include <utility>
+
+/* --------------------------------------------------------------------------
+ * Interpolation types -- matches anm2ed's on-demand model
+ * ------------------------------------------------------------------------ */
+
+enum class Interpolation { NONE, LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT };
 
 /* --------------------------------------------------------------------------
  * Data structures matching the .anm2 spec
@@ -43,7 +56,7 @@
 
 struct Spritesheet {
   int id = -1;
-  QString path;   // relative path from game resources dir (backslash-separated)
+  QString path;   // relative path from game resources dir
   QPixmap pixmap; // loaded PNG
 };
 
@@ -74,7 +87,7 @@ struct Anm2Frame {
   int red_offset = 0;
   int green_offset = 0;
   int blue_offset = 0;
-  bool interpolated = false;
+  Interpolation interpolation = Interpolation::LINEAR;
 };
 
 struct LayerAnimation {
@@ -92,8 +105,148 @@ struct Animation {
 };
 
 /* --------------------------------------------------------------------------
+ * On-demand rendering helpers (anm2ed model)
+ * ------------------------------------------------------------------------ */
+
+/* Easing curve evaluation */
+static float interpolation_factor(Interpolation interpolation, float value) {
+  value = std::clamp(value, 0.0f, 1.0f);
+  switch (interpolation) {
+  case Interpolation::LINEAR:
+    return value;
+  case Interpolation::EASE_IN:
+    return value * value;
+  case Interpolation::EASE_OUT:
+    return 1.0f - ((1.0f - value) * (1.0f - value));
+  case Interpolation::EASE_IN_OUT:
+    return value < 0.5f ? (2.0f * value * value)
+                        : (1.0f - std::pow(-2.0f * value + 2.0f, 2.0f) * 0.5f);
+  default:
+    return 0.0f;
+  }
+}
+
+/* Sum of all keyframe durations in a track */
+static int track_length_get(const QList<Anm2Frame> &keyframes) {
+  int length = 0;
+  for (const auto &frame : keyframes)
+    if (frame.delay > 0)
+      length += frame.delay;
+  return length;
+}
+
+/* On-demand interpolated frame synthesis for a single layer's keyframes.
+ * Finds the keyframe at the given time and interpolates between it and the
+ * next keyframe when interpolation is enabled. */
+static Anm2Frame frame_generate(const QList<Anm2Frame> &keyframes,
+                                float time) {
+  Anm2Frame frame;
+  if (keyframes.isEmpty())
+    return frame;
+
+  time = std::max(time, 0.0f);
+  const Anm2Frame *frameNext = nullptr;
+  int durationCurrent = 0;
+  int durationNext = 0;
+
+  for (int i = 0; i < keyframes.size(); ++i) {
+    const auto &iFrame = keyframes[i];
+    frame = iFrame;
+    durationNext += frame.delay;
+
+    if (time >= durationCurrent && time < durationNext) {
+      /* Find next FRAME keyframe for interpolation */
+      for (int next = i + 1; next < keyframes.size(); ++next) {
+        frameNext = &keyframes[next];
+        break;
+      }
+
+      /* Interpolate between current and next frame */
+      if (frame.interpolation != Interpolation::NONE && frameNext &&
+          frame.delay > 1) {
+        float amount = interpolation_factor(
+            frame.interpolation,
+            (time - durationCurrent) / (durationNext - durationCurrent));
+
+        frame.x_position =
+            qRound(frame.x_position +
+                   amount * (frameNext->x_position - frame.x_position));
+        frame.y_position =
+            qRound(frame.y_position +
+                   amount * (frameNext->y_position - frame.y_position));
+        frame.x_pivot =
+            qRound(frame.x_pivot +
+                   amount * (frameNext->x_pivot - frame.x_pivot));
+        frame.y_pivot =
+            qRound(frame.y_pivot +
+                   amount * (frameNext->y_pivot - frame.y_pivot));
+        frame.x_crop =
+            qRound(frame.x_crop +
+                   amount * (frameNext->x_crop - frame.x_crop));
+        frame.y_crop =
+            qRound(frame.y_crop +
+                   amount * (frameNext->y_crop - frame.y_crop));
+        frame.width =
+            qRound(frame.width + amount * (frameNext->width - frame.width));
+        frame.height = qRound(frame.height +
+                              amount * (frameNext->height - frame.height));
+        frame.x_scale =
+            qRound(frame.x_scale +
+                   amount * (frameNext->x_scale - frame.x_scale));
+        frame.y_scale =
+            qRound(frame.y_scale +
+                   amount * (frameNext->y_scale - frame.y_scale));
+        frame.rotation =
+            qRound(frame.rotation +
+                   amount * (frameNext->rotation - frame.rotation));
+        frame.red_tint =
+            qRound(frame.red_tint +
+                   amount * (frameNext->red_tint - frame.red_tint));
+        frame.green_tint =
+            qRound(frame.green_tint +
+                   amount * (frameNext->green_tint - frame.green_tint));
+        frame.blue_tint =
+            qRound(frame.blue_tint +
+                   amount * (frameNext->blue_tint - frame.blue_tint));
+        frame.alpha_tint =
+            qRound(frame.alpha_tint +
+                   amount * (frameNext->alpha_tint - frame.alpha_tint));
+        frame.red_offset =
+            qRound(frame.red_offset +
+                   amount * (frameNext->red_offset - frame.red_offset));
+        frame.green_offset =
+            qRound(frame.green_offset +
+                   amount * (frameNext->green_offset - frame.green_offset));
+        frame.blue_offset =
+            qRound(frame.blue_offset +
+                   amount * (frameNext->blue_offset - frame.blue_offset));
+      }
+      break;
+    }
+
+    durationCurrent += frame.delay;
+  }
+
+  return frame;
+}
+
+/* --------------------------------------------------------------------------
  * .anm2 parser using QXmlStreamReader
  * ------------------------------------------------------------------------ */
+
+static Interpolation parseInterpolation(const QString &str) {
+  if (str.isEmpty() || str == "False" || str == "false")
+    return Interpolation::NONE;
+  if (str == "True" || str == "true" || str == "Linear")
+    return Interpolation::LINEAR;
+  if (str == "EaseIn")
+    return Interpolation::EASE_IN;
+  if (str == "EaseOut")
+    return Interpolation::EASE_OUT;
+  if (str == "EaseInOut")
+    return Interpolation::EASE_IN_OUT;
+  return Interpolation::LINEAR; // default
+}
 
 static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   Anm2Frame f;
@@ -132,7 +285,7 @@ static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   f.red_offset = attrs.value("RedOffset").toInt();
   f.green_offset = attrs.value("GreenOffset").toInt();
   f.blue_offset = attrs.value("BlueOffset").toInt();
-  f.interpolated = attrs.value("Interpolated").toString() == "true";
+  f.interpolation = parseInterpolation(attrs.value("Interpolated").toString());
   return f;
 }
 
@@ -146,12 +299,8 @@ static bool parseAnm2(const QString &path, Animation &anim,
 
   QXmlStreamReader xml(&file);
 
-  /* -- Spritesheets and Layers are in <Content> before <Animations> -- */
-  /* Two-level traversal: first find the root <AnimatedActor>,
-     then iterate its direct children (Content, Animations). */
   while (xml.readNextStartElement()) {
     if (xml.name() == u"AnimatedActor") {
-      /* Now iterate children of AnimatedActor */
       while (xml.readNextStartElement()) {
         if (xml.name() == u"Content") {
           while (xml.readNextStartElement()) {
@@ -186,7 +335,6 @@ static bool parseAnm2(const QString &path, Animation &anim,
             }
           }
         } else if (xml.name() == u"Animations") {
-          /* Default animation name */
           QString defaultAnim =
               xml.attributes().value("DefaultAnimation").toString();
 
@@ -211,7 +359,8 @@ static bool parseAnm2(const QString &path, Animation &anim,
                   while (xml.readNextStartElement()) {
                     if (xml.name() == u"LayerAnimation") {
                       LayerAnimation la;
-                      la.layer_id = xml.attributes().value("LayerId").toInt();
+                      la.layer_id =
+                          xml.attributes().value("LayerId").toInt();
                       la.visible =
                           xml.attributes().value("Visible").toString() !=
                           "false";
@@ -233,11 +382,9 @@ static bool parseAnm2(const QString &path, Animation &anim,
                 }
               }
 
-              /* Collect all animations if requested */
               if (all_anims)
                 all_anims->append(a);
 
-              /* Pick the default animation, or the first one */
               if (anim.name.isEmpty() || a.name == defaultAnim)
                 anim = std::move(a);
             } else {
@@ -248,7 +395,7 @@ static bool parseAnm2(const QString &path, Animation &anim,
           xml.skipCurrentElement();
         }
       }
-      break; /* done with root element */
+      break;
     } else {
       xml.skipCurrentElement();
     }
@@ -261,13 +408,8 @@ static bool parseAnm2(const QString &path, Animation &anim,
  * Load spritesheet PNGs from a given base directory (or walk up for gfx/)
  * ------------------------------------------------------------------------ */
 
-/* Host-resolved file path -- set by gmm_register_v2, used by loadSpritesheets.
-   The host's PathResolver handles case-insensitive lookup on Linux. */
 static GmmResolveFileFn g_resolve_file = nullptr;
 
-/* Build candidate base directories for spritesheet resolution.
-   Takes an explicit base_dir (from the animation parser) and walks up
-   looking for gfx/ siblings. Also includes the base_dir itself. */
 static QStringList buildBaseDirs(const QString &base_dir) {
   QStringList dirs;
   dirs << base_dir;
@@ -295,7 +437,6 @@ static void loadSpritesheetsFromDir(const QString &base_dir,
     rel.replace('\\', '/');
     bool loaded = false;
 
-    /* Use host resolver for case-insensitive lookup */
     if (g_resolve_file) {
       for (const auto &base : base_dirs) {
         QByteArray root_bytes = base.toUtf8();
@@ -313,7 +454,6 @@ static void loadSpritesheetsFromDir(const QString &base_dir,
       }
     }
 
-    /* Fallback: try exact path (fast, no CI) */
     if (!loaded) {
       for (const auto &base : base_dirs) {
         QString full = QDir(base).absoluteFilePath(rel);
@@ -326,8 +466,6 @@ static void loadSpritesheetsFromDir(const QString &base_dir,
   }
 }
 
-/* Legacy loader: derives base_dir from the .anm2 file path (for preview widget)
- */
 static void loadSpritesheets(const QString &anm2_path,
                              QList<Spritesheet> &spritesheets) {
   loadSpritesheetsFromDir(QFileInfo(anm2_path).absoluteDir().absolutePath(),
@@ -339,7 +477,6 @@ static void loadSpritesheets(const QString &anm2_path,
  * AnimationParserFeature / PreviewWidget::try_load_anm2().
  * ------------------------------------------------------------------------ */
 
-/* Read FPS from the .anm2 <Info> tag (re-parses the file minimally). */
 static int readAnm2Fps(const QString &path) {
   QFile f(path);
   if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
@@ -355,8 +492,6 @@ static int readAnm2Fps(const QString &path) {
   return 18;
 }
 
-/* Crop a QPixmap to a sub-region and return it as a QImage of Format_RGBA8888.
- */
 static QImage cropToRgba(const QPixmap &sheet, int cx, int cy, int cw, int ch) {
   if (sheet.isNull() || cw <= 0 || ch <= 0)
     return QImage();
@@ -365,6 +500,302 @@ static QImage cropToRgba(const QPixmap &sheet, int cx, int cy, int cw, int ch) {
     return QImage();
   return cropped.toImage().convertToFormat(QImage::Format_RGBA8888);
 }
+
+/* --------------------------------------------------------------------------
+ * Compute animation total frame count (sum of keyframe durations or frame_num)
+ * ------------------------------------------------------------------------ */
+
+static int computeTotalFrames(const Animation &a) {
+  int max_layer_frames = 0;
+  for (const auto &la : a.layer_animations) {
+    int layer_len = track_length_get(la.frames);
+    if (layer_len > max_layer_frames)
+      max_layer_frames = layer_len;
+  }
+  int total = a.frame_num;
+  if (total <= 0)
+    total = max_layer_frames;
+  return total;
+}
+
+/* --------------------------------------------------------------------------
+ * Compute fixed canvas size across all frames using interpolated keyframes.
+ * Iterates every time step, generates interpolated frames for all layers,
+ * and takes the global bounding box. This ensures the canvas never changes
+ * size between frames (fixes canvas bouncing).
+ * ------------------------------------------------------------------------ */
+
+static std::pair<int, int> computeAnimationRect(const Animation &a,
+                                                int default_w, int default_h) {
+  constexpr int CORNERS[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+  int total = computeTotalFrames(a);
+  if (total <= 0)
+    return {default_w, default_h};
+
+  float minX = 1e30f, minY = 1e30f;
+  float maxX = -1e30f, maxY = -1e30f;
+  bool isAny = false;
+
+  for (float t = 0; t < static_cast<float>(total); t += 1.0f) {
+    /* Root transform at this time */
+    Anm2Frame rootFrame = frame_generate({a.root_frame}, t);
+    QTransform rootTransform;
+    rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
+    rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
+    rootTransform.rotate(rootFrame.rotation);
+
+    for (const auto &la : a.layer_animations) {
+      if (!la.visible)
+        continue;
+      Anm2Frame frame = frame_generate(la.frames, t);
+      if (!frame.visible)
+        continue;
+
+      int crop_w = frame.width > 0 ? frame.width : 64;
+      int crop_h = frame.height > 0 ? frame.height : 64;
+
+      /* Per-layer transform: translate(position - pivot), scale, rotate */
+      QTransform layerTransform;
+      layerTransform.translate(frame.x_position - frame.x_pivot,
+                               frame.y_position - frame.y_pivot);
+      layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+      layerTransform.rotate(frame.rotation);
+
+      QTransform fullTransform = rootTransform * layerTransform;
+
+      for (const auto &corner : CORNERS) {
+        QPointF world =
+            fullTransform.map(QPointF(corner[0] * crop_w, corner[1] * crop_h));
+        minX = std::min(minX, static_cast<float>(world.x()));
+        minY = std::min(minY, static_cast<float>(world.y()));
+        maxX = std::max(maxX, static_cast<float>(world.x()));
+        maxY = std::max(maxY, static_cast<float>(world.y()));
+        isAny = true;
+      }
+    }
+  }
+
+  if (!isAny)
+    return {default_w, default_h};
+
+  int pad = 10;
+  int w = std::max(1, static_cast<int>(maxX - minX) + pad * 2);
+  int h = std::max(1, static_cast<int>(maxY - minY) + pad * 2);
+  return {w, h};
+}
+
+/* --------------------------------------------------------------------------
+ * Render a single animation frame to QImage using on-demand interpolation.
+ * Uses QTransform for correct root transforms and per-layer transforms.
+ * ------------------------------------------------------------------------ */
+
+static QImage renderFrameAtTime(const Animation &a,
+                                const QList<LayerDef> &layer_defs,
+                                std::map<int, QPixmap> &sheet_by_id,
+                                float time, int cw, int ch) {
+  QImage canvas(cw, ch, QImage::Format_RGBA8888);
+  canvas.fill(Qt::transparent);
+  QPainter p(&canvas);
+  p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+  p.setRenderHint(QPainter::Antialiasing, false);
+
+  /* Compute origin so that all content fits in the canvas */
+  int gmin_x = INT_MAX, gmin_y = INT_MAX;
+  {
+    int total = computeTotalFrames(a);
+    for (float t = 0; t < static_cast<float>(total); t += 1.0f) {
+      Anm2Frame rootFrame = frame_generate({a.root_frame}, t);
+      QTransform rootTransform;
+      rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
+      rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
+      rootTransform.rotate(rootFrame.rotation);
+
+      for (const auto &la : a.layer_animations) {
+        if (!la.visible)
+          continue;
+        Anm2Frame frame = frame_generate(la.frames, t);
+        if (!frame.visible)
+          continue;
+        int crop_w = frame.width > 0 ? frame.width : 64;
+        int crop_h = frame.height > 0 ? frame.height : 64;
+        QTransform layerTransform;
+        layerTransform.translate(frame.x_position - frame.x_pivot,
+                                 frame.y_position - frame.y_pivot);
+        layerTransform.scale(frame.x_scale / 100.0, frame.y_scale / 100.0);
+        layerTransform.rotate(frame.rotation);
+        QTransform fullTransform = rootTransform * layerTransform;
+        constexpr int CORNERS[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+        for (const auto &corner : CORNERS) {
+          QPointF world = fullTransform.map(
+              QPointF(corner[0] * crop_w, corner[1] * crop_h));
+          gmin_x = qMin(gmin_x, (int)world.x());
+          gmin_y = qMin(gmin_y, (int)world.y());
+        }
+      }
+    }
+  }
+  int origin_x = -gmin_x;
+  int origin_y = -gmin_y;
+
+  /* Root transform at this time */
+  Anm2Frame rootFrame = frame_generate({a.root_frame}, time);
+  QTransform rootTransform;
+  rootTransform.translate(rootFrame.x_position, rootFrame.y_position);
+  rootTransform.scale(rootFrame.x_scale / 100.0, rootFrame.y_scale / 100.0);
+  rootTransform.rotate(rootFrame.rotation);
+
+  /* Render each layer using on-demand interpolated frames */
+  for (const auto &la : a.layer_animations) {
+    if (!la.visible)
+      continue;
+
+    /* Generate interpolated frame for this layer at this time */
+    Anm2Frame fr = frame_generate(la.frames, time);
+    if (!fr.visible)
+      continue;
+
+    /* Find spritesheet for this layer */
+    QPixmap *sheet = nullptr;
+    for (const auto &ld : layer_defs) {
+      if (ld.id == la.layer_id) {
+        auto it = sheet_by_id.find(ld.spritesheet_id);
+        if (it != sheet_by_id.end() && !it->second.isNull())
+          sheet = &it->second;
+        break;
+      }
+    }
+
+    double sx = fr.x_scale / 100.0;
+    double sy = fr.y_scale / 100.0;
+    int crop_w = fr.width;
+    int crop_h = fr.height;
+
+    if (sheet && crop_w <= 0)
+      crop_w = sheet->width();
+    if (sheet && crop_h <= 0)
+      crop_h = sheet->height();
+    if (crop_w <= 0)
+      crop_w = 64;
+    if (crop_h <= 0)
+      crop_h = 64;
+
+    if (sheet && !sheet->isNull()) {
+      QPixmap cropped = sheet->copy(fr.x_crop, fr.y_crop, crop_w, crop_h);
+      if (!cropped.isNull()) {
+        int scaled_w = qMax(1, (int)(crop_w * sx));
+        int scaled_h = qMax(1, (int)(crop_h * sy));
+        QPixmap scaled =
+            cropped.scaled(scaled_w, scaled_h, Qt::IgnoreAspectRatio,
+                           Qt::FastTransformation);
+
+        /* Apply tint */
+        if (fr.red_tint != 255 || fr.green_tint != 255 ||
+            fr.blue_tint != 255 || fr.alpha_tint != 255 ||
+            fr.red_offset != 0 || fr.green_offset != 0 ||
+            fr.blue_offset != 0) {
+          QPainter sp(&scaled);
+          sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+          QColor tint(qBound(0, fr.red_tint + fr.red_offset, 255),
+                      qBound(0, fr.green_tint + fr.green_offset, 255),
+                      qBound(0, fr.blue_tint + fr.blue_offset, 255),
+                      qBound(0, fr.alpha_tint, 255));
+          sp.fillRect(scaled.rect(), tint);
+          sp.end();
+        }
+
+        /* Per-layer transform using QTransform (correct transforms) */
+        QTransform layerTransform;
+        layerTransform.translate(fr.x_position - fr.x_pivot,
+                                 fr.y_position - fr.y_pivot);
+        layerTransform.scale(sx, sy);
+        layerTransform.rotate(fr.rotation);
+
+        QTransform fullTransform = rootTransform * layerTransform;
+
+        /* Apply the full transform via drawPixmap with QTransform */
+        p.setTransform(fullTransform, false);
+        p.drawPixmap(origin_x, origin_y, scaled);
+        p.resetTransform();
+      }
+    } else {
+      /* No spritesheet -- draw colored rectangle placeholder */
+      static const QColor kPalette[] = {
+          QColor(100, 120, 180), QColor(140, 100, 160),
+          QColor(100, 160, 140), QColor(180, 120, 100),
+          QColor(120, 140, 160), QColor(160, 130, 130),
+      };
+      int ci = qAbs(la.layer_id) % 6;
+      int sw = qMax(1, (int)(crop_w * sx));
+      int sh = qMax(1, (int)(crop_h * sy));
+
+      QTransform layerTransform;
+      layerTransform.translate(fr.x_position - fr.x_pivot,
+                               fr.y_position - fr.y_pivot);
+      layerTransform.scale(sx, sy);
+      layerTransform.rotate(fr.rotation);
+
+      QTransform fullTransform = rootTransform * layerTransform;
+      p.setTransform(fullTransform, false);
+      p.fillRect(origin_x, origin_y, sw, sh, kPalette[ci]);
+      p.setPen(kPalette[ci].darker(130));
+      p.drawRect(origin_x, origin_y, sw, sh);
+      p.resetTransform();
+    }
+  }
+
+  p.end();
+  return canvas;
+}
+
+/* --------------------------------------------------------------------------
+ * On-demand render callback for the ABI.
+ * Called by the host's preview window to render a single frame.
+ * Returns malloc'd RGBA pixels (caller frees).
+ * ------------------------------------------------------------------------ */
+
+struct Anm2RawData {
+  Animation anim;
+  QList<Spritesheet> spritesheets;
+  QList<LayerDef> layer_defs;
+  std::map<int, QPixmap> sheet_by_id;
+  int fps = 18;
+  int total_frames = 0;
+  int canvas_width = 0;
+  int canvas_height = 0;
+};
+
+static uint8_t *anm2_render_frame_cb(void *raw_animation, float time_ms,
+                                     int32_t *out_width, int32_t *out_height) {
+  if (!raw_animation || !out_width || !out_height)
+    return nullptr;
+
+  auto *data = static_cast<Anm2RawData *>(raw_animation);
+
+  /* Clamp time to valid range */
+  float total_time = static_cast<float>(data->total_frames);
+  float t = std::clamp(time_ms, 0.0f, total_time > 0 ? total_time - 1.0f : 0.0f);
+
+  QImage frame =
+      renderFrameAtTime(data->anim, data->layer_defs, data->sheet_by_id, t,
+                        data->canvas_width, data->canvas_height);
+
+  if (frame.isNull())
+    return nullptr;
+
+  QImage rgba = frame.convertToFormat(QImage::Format_RGBA8888);
+  *out_width = rgba.width();
+  *out_height = rgba.height();
+
+  size_t pixel_count = static_cast<size_t>(rgba.sizeInBytes());
+  uint8_t *pixels = static_cast<uint8_t *>(malloc(pixel_count));
+  if (pixels)
+    memcpy(pixels, rgba.constBits(), pixel_count);
+  return pixels;
+}
+
+/* --------------------------------------------------------------------------
+ * Main animation parser entry point
+ * ------------------------------------------------------------------------ */
 
 static int anm2_parse(const char *file_path_c, const char *base_dir_c,
                       GmmAnimationDataV2 *out, void *) {
@@ -392,267 +823,82 @@ static int anm2_parse(const char *file_path_c, const char *base_dir_c,
   for (const auto &ss : spritesheets)
     sheet_by_id[ss.id] = ss.pixmap;
 
-    /* Read FPS */
-    int fps = readAnm2Fps(file_path);
+  /* Read FPS */
+  int fps = readAnm2Fps(file_path);
 
-  /* Helper: compute total steps for an animation */
-  auto computeSteps = [](const Animation &a) -> int {
-    int max_layer_frames = 0;
-    for (const auto &la : a.layer_animations)
-      if (la.frames.size() > max_layer_frames)
-        max_layer_frames = la.frames.size();
-    int steps = a.frame_num;
-    if (steps <= 0)
-      steps = max_layer_frames;
-    return steps;
-  };
+  /* Compute fixed canvas size for the default animation */
+  auto [def_cw, def_ch] = computeAnimationRect(anim, 400, 300);
 
-  /* Helper: compute fixed canvas size for an animation across ALL frames.
-   * This ensures the canvas doesn't change size per frame (Issue 2). */
-  auto computeFixedCanvas = [&](const Animation &a, int default_w,
-                                int default_h) -> std::pair<int, int> {
-    int gmin_x = INT_MAX, gmin_y = INT_MAX;
-    int gmax_x = INT_MIN, gmax_y = INT_MIN;
-    int total = computeSteps(a);
-    if (total <= 0)
-      return {default_w, default_h};
+  /* Pre-bake the first frame as fallback for backward compat */
+  int total = computeTotalFrames(anim);
+  GmmAnimationFrameV2 *def_frames = nullptr;
+  size_t def_count = 0;
 
-    for (int step = 0; step < total; ++step) {
-      int min_x = INT_MAX, min_y = INT_MAX;
-      int max_x = INT_MIN, max_y = INT_MIN;
-      auto ub = [&](int x, int y, int w, int h) {
-        if (x < min_x)
-          min_x = x;
-        if (y < min_y)
-          min_y = y;
-        if (x + w > max_x)
-          max_x = x + w;
-        if (y + h > max_y)
-          max_y = y + h;
-      };
-      ub(a.root_frame.x_position, a.root_frame.y_position, default_w,
-         default_h);
-      for (const auto &la : a.layer_animations) {
-        if (!la.visible)
-          continue;
-        int fi = qMin(step, la.frames.size() - 1);
-        if (fi < 0)
-          continue;
-        const Anm2Frame &fr = la.frames[fi];
-        if (!fr.visible)
-          continue;
-        int rx = fr.x_position - fr.x_pivot + fr.x_crop;
-        int ry = fr.y_position - fr.y_pivot + fr.y_crop;
-        int rw = fr.width > 0 ? fr.width : 64;
-        int rh = fr.height > 0 ? fr.height : 64;
-        ub(rx, ry, rw, rh);
-      }
-      if (min_x < gmin_x)
-        gmin_x = min_x;
-      if (min_y < gmin_y)
-        gmin_y = min_y;
-      if (max_x > gmax_x)
-        gmax_x = max_x;
-      if (max_y > gmax_y)
-        gmax_y = max_y;
-    }
-    if (gmax_x <= gmin_x)
-      gmax_x = gmin_x + default_w;
-    if (gmax_y <= gmin_y)
-      gmax_y = gmin_y + default_h;
-    int pad = 10;
-    int w = (gmax_x - gmin_x) + pad * 2;
-    int h = (gmax_y - gmin_y) + pad * 2;
-    if (w <= 0)
-      w = default_w;
-    if (h <= 0)
-      h = default_h;
-    return {w, h};
-  };
-
-  /* Helper: render a single animation into an array of GmmAnimationFrameV2 */
-  auto renderAnimation =
-      [&](const Animation &a, int cw,
-          int ch) -> std::pair<GmmAnimationFrameV2 *, size_t> {
-    int total = computeSteps(a);
-    if (total <= 0)
-      return {nullptr, 0};
-
-    double rsx = a.root_frame.x_scale / 100.0;
-    double rsy = a.root_frame.y_scale / 100.0;
-
-    GmmAnimationFrameV2 *frames = static_cast<GmmAnimationFrameV2 *>(
+  if (total > 0) {
+    def_frames = static_cast<GmmAnimationFrameV2 *>(
         calloc(static_cast<size_t>(total), sizeof(GmmAnimationFrameV2)));
-    if (!frames)
-      return {nullptr, 0};
+    if (def_frames) {
+      def_count = static_cast<size_t>(total);
+      for (int step = 0; step < total; ++step) {
+        GmmAnimationFrameV2 &cf = def_frames[step];
+        cf.delay_ms = 1000.0f / static_cast<float>(fps);
 
-    /* Compute fixed bounding origin for this animation */
-    int gmin_x = INT_MAX, gmin_y = INT_MAX;
-    for (int step = 0; step < total; ++step) {
-      int min_x = INT_MAX, min_y = INT_MAX;
-      int max_x = INT_MIN, max_y = INT_MIN;
-      auto ub = [&](int x, int y, int w, int h) {
-        if (x < min_x)
-          min_x = x;
-        if (y < min_y)
-          min_y = y;
-        if (x + w > max_x)
-          max_x = x + w;
-        if (y + h > max_y)
-          max_y = y + h;
-      };
-      ub(a.root_frame.x_position, a.root_frame.y_position, cw, ch);
-      for (const auto &la : a.layer_animations) {
-        if (!la.visible)
-          continue;
-        int fi = qMin(step, la.frames.size() - 1);
-        if (fi < 0)
-          continue;
-        const Anm2Frame &fr = la.frames[fi];
-        if (!fr.visible)
-          continue;
-        int rx = fr.x_position - fr.x_pivot + fr.x_crop;
-        int ry = fr.y_position - fr.y_pivot + fr.y_crop;
-        int rw = fr.width > 0 ? fr.width : 64;
-        int rh = fr.height > 0 ? fr.height : 64;
-        ub(rx, ry, rw, rh);
-      }
-      if (min_x < gmin_x)
-        gmin_x = min_x;
-      if (min_y < gmin_y)
-        gmin_y = min_y;
-    }
-    int origin_x = -gmin_x;
-    int origin_y = -gmin_y;
+        QImage canvas = renderFrameAtTime(anim, layer_defs, sheet_by_id,
+                                          static_cast<float>(step), def_cw, def_ch);
+        QImage rgba = canvas.convertToFormat(QImage::Format_RGBA8888);
 
-    for (int step = 0; step < total; ++step) {
-      GmmAnimationFrameV2 &cf = frames[step];
-      cf.delay_ms = 1000.0f / static_cast<float>(fps);
-
-      QImage canvas(cw, ch, QImage::Format_RGBA8888);
-      canvas.fill(Qt::transparent);
-      QPainter p(&canvas);
-      p.setRenderHint(QPainter::SmoothPixmapTransform, true);
-      p.setRenderHint(QPainter::Antialiasing, false);
-
-      for (const auto &la : a.layer_animations) {
-        if (!la.visible)
-          continue;
-        int fi = qMin(step, la.frames.size() - 1);
-        if (fi < 0)
-          continue;
-        const Anm2Frame &fr = la.frames[fi];
-        if (!fr.visible)
-          continue;
-
-        /* Find spritesheet for this layer */
-        QPixmap *sheet = nullptr;
-        for (const auto &ld : layer_defs) {
-          if (ld.id == la.layer_id) {
-            auto it = sheet_by_id.find(ld.spritesheet_id);
-            if (it != sheet_by_id.end() && !it->second.isNull())
-              sheet = &it->second;
-            break;
+        cf.layer_count = 1;
+        cf.layers = static_cast<GmmAnimationLayerV2 *>(
+            calloc(1, sizeof(GmmAnimationLayerV2)));
+        if (!cf.layers) {
+          for (size_t j = 0; j < static_cast<size_t>(step); ++j) {
+            for (size_t k = 0; k < def_frames[j].layer_count; ++k)
+              free(def_frames[j].layers[k].rgba_pixels);
+            free(def_frames[j].layers);
           }
+          free(def_frames);
+          def_frames = nullptr;
+          def_count = 0;
+          break;
         }
 
-        double sx = fr.x_scale / 100.0 * rsx;
-        double sy = fr.y_scale / 100.0 * rsy;
-        int draw_x = origin_x + fr.x_position - fr.x_pivot;
-        int draw_y = origin_y + fr.y_position - fr.y_pivot;
-        int crop_w = fr.width;
-        int crop_h = fr.height;
-
-        if (sheet && crop_w <= 0)
-          crop_w = sheet->width();
-        if (sheet && crop_h <= 0)
-          crop_h = sheet->height();
-        if (crop_w <= 0)
-          crop_w = 64;
-        if (crop_h <= 0)
-          crop_h = 64;
-
-        if (sheet && !sheet->isNull()) {
-          QPixmap cropped = sheet->copy(fr.x_crop, fr.y_crop, crop_w, crop_h);
-          if (!cropped.isNull()) {
-            int scaled_w = qMax(1, (int)(crop_w * sx));
-            int scaled_h = qMax(1, (int)(crop_h * sy));
-            QPixmap scaled =
-                cropped.scaled(scaled_w, scaled_h, Qt::IgnoreAspectRatio,
-                               Qt::FastTransformation);
-
-            if (fr.red_tint != 255 || fr.green_tint != 255 ||
-                fr.blue_tint != 255 || fr.alpha_tint != 255 ||
-                fr.red_offset != 0 || fr.green_offset != 0 ||
-                fr.blue_offset != 0) {
-              QPainter sp(&scaled);
-              sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-              QColor tint(qBound(0, fr.red_tint + fr.red_offset, 255),
-                          qBound(0, fr.green_tint + fr.green_offset, 255),
-                          qBound(0, fr.blue_tint + fr.blue_offset, 255),
-                          qBound(0, fr.alpha_tint, 255));
-              sp.fillRect(scaled.rect(), tint);
-              sp.end();
-            }
-
-            if (fr.rotation != 0) {
-              QTransform t;
-              t.rotate(fr.rotation);
-              scaled = scaled.transformed(t, Qt::SmoothTransformation);
-            }
-
-            p.drawPixmap(draw_x, draw_y, scaled);
-          }
-        }
-      }
-      p.end();
-
-      QImage rgba = canvas.convertToFormat(QImage::Format_RGBA8888);
-
-      cf.layer_count = 1;
-      cf.layers = static_cast<GmmAnimationLayerV2 *>(
-          calloc(1, sizeof(GmmAnimationLayerV2)));
-      if (!cf.layers) {
-        /* Clean up on allocation failure */
-        for (size_t j = 0; j < static_cast<size_t>(step); ++j) {
-          for (size_t k = 0; k < frames[j].layer_count; ++k)
-            free(frames[j].layers[k].rgba_pixels);
-          free(frames[j].layers);
-        }
-        free(frames);
-        return {nullptr, 0};
-      }
-
-      cf.layers[0].x = 0;
-      cf.layers[0].y = 0;
-      cf.layers[0].width = rgba.width();
-      cf.layers[0].height = rgba.height();
-      cf.layers[0].pixel_count = static_cast<size_t>(rgba.sizeInBytes());
-      cf.layers[0].rgba_pixels =
-          static_cast<uint8_t *>(malloc(cf.layers[0].pixel_count));
-      if (cf.layers[0].rgba_pixels) {
-        memcpy(cf.layers[0].rgba_pixels, rgba.constBits(),
-               cf.layers[0].pixel_count);
+        cf.layers[0].x = 0;
+        cf.layers[0].y = 0;
+        cf.layers[0].width = rgba.width();
+        cf.layers[0].height = rgba.height();
+        cf.layers[0].pixel_count = static_cast<size_t>(rgba.sizeInBytes());
+        cf.layers[0].rgba_pixels =
+            static_cast<uint8_t *>(malloc(cf.layers[0].pixel_count));
+        if (cf.layers[0].rgba_pixels)
+          memcpy(cf.layers[0].rgba_pixels, rgba.constBits(),
+                 cf.layers[0].pixel_count);
       }
     }
+  }
 
-    return {frames, static_cast<size_t>(total)};
-  };
-
-  /* ---------------------------------------------------------------
-   * Default animation: render into top-level frames (backward compat)
-   * --------------------------------------------------------------- */
-  auto [def_frames, def_count] = renderAnimation(anim, 400, 300);
   if (!def_frames || def_count == 0)
     return 0;
-
-  auto [def_cw, def_ch] = computeFixedCanvas(anim, 400, 300);
 
   out->fps = static_cast<float>(fps);
   out->canvas_width = def_cw;
   out->canvas_height = def_ch;
   out->frames = def_frames;
   out->frame_count = def_count;
+  out->render_frame = anm2_render_frame_cb;
+
+  /* ---------------------------------------------------------------
+   * Allocate raw animation data for on-demand rendering
+   * --------------------------------------------------------------- */
+  auto *raw = new Anm2RawData();
+  raw->anim = anim;
+  raw->spritesheets = spritesheets;
+  raw->layer_defs = layer_defs;
+  raw->sheet_by_id = sheet_by_id;
+  raw->fps = fps;
+  raw->total_frames = total;
+  raw->canvas_width = def_cw;
+  raw->canvas_height = def_ch;
+  out->raw_animation = raw;
 
   /* ---------------------------------------------------------------
    * Named states: render each animation from all_anims as a state
@@ -666,7 +912,6 @@ static int anm2_parse(const char *file_path_c, const char *base_dir_c,
         GmmAnimationStateV2 &st = out->states[si];
         const Animation &a = all_anims[si];
 
-        /* Name: malloc'd, caller frees */
         QByteArray name_bytes = a.name.toUtf8();
         st.name = static_cast<char *>(malloc(name_bytes.size() + 1));
         if (st.name) {
@@ -674,13 +919,54 @@ static int anm2_parse(const char *file_path_c, const char *base_dir_c,
           st.name[name_bytes.size()] = '\0';
         }
 
-        auto [cw, ch] = computeFixedCanvas(a, 400, 300);
+        auto [cw, ch] = computeAnimationRect(a, 400, 300);
         st.canvas_width = cw;
         st.canvas_height = ch;
 
-        auto [frames, count] = renderAnimation(a, cw, ch);
-        st.frames = frames;
-        st.frame_count = count;
+        int state_total = computeTotalFrames(a);
+        st.frame_count = static_cast<size_t>(state_total);
+        st.frames = static_cast<GmmAnimationFrameV2 *>(
+            calloc(st.frame_count, sizeof(GmmAnimationFrameV2)));
+        if (st.frames) {
+          for (int step = 0; step < state_total; ++step) {
+            GmmAnimationFrameV2 &cf = st.frames[step];
+            cf.delay_ms = 1000.0f / static_cast<float>(fps);
+
+            QImage canvas = renderFrameAtTime(a, layer_defs, sheet_by_id,
+                                              static_cast<float>(step), cw, ch);
+            QImage rgba = canvas.convertToFormat(QImage::Format_RGBA8888);
+
+            cf.layer_count = 1;
+            cf.layers = static_cast<GmmAnimationLayerV2 *>(
+                calloc(1, sizeof(GmmAnimationLayerV2)));
+            if (cf.layers) {
+              cf.layers[0].x = 0;
+              cf.layers[0].y = 0;
+              cf.layers[0].width = rgba.width();
+              cf.layers[0].height = rgba.height();
+              cf.layers[0].pixel_count =
+                  static_cast<size_t>(rgba.sizeInBytes());
+              cf.layers[0].rgba_pixels =
+                  static_cast<uint8_t *>(malloc(cf.layers[0].pixel_count));
+              if (cf.layers[0].rgba_pixels)
+                memcpy(cf.layers[0].rgba_pixels, rgba.constBits(),
+                       cf.layers[0].pixel_count);
+            }
+          }
+        }
+
+        /* Per-state raw data for on-demand rendering */
+        auto *state_raw = new Anm2RawData();
+        state_raw->anim = a;
+        state_raw->spritesheets = spritesheets;
+        state_raw->layer_defs = layer_defs;
+        state_raw->sheet_by_id = sheet_by_id;
+        state_raw->fps = fps;
+        state_raw->total_frames = state_total;
+        state_raw->canvas_width = cw;
+        state_raw->canvas_height = ch;
+        st.raw_animation = state_raw;
+        st.render_frame = anm2_render_frame_cb;
       }
     }
   } else {
@@ -693,6 +979,7 @@ static int anm2_parse(const char *file_path_c, const char *base_dir_c,
 
 /* --------------------------------------------------------------------------
  * Preview widget -- renders animation frames (standalone QWidget)
+ * Uses on-demand interpolation for smooth playback.
  * ------------------------------------------------------------------------ */
 
 class Anm2PreviewWidget : public QWidget {
@@ -727,22 +1014,10 @@ public:
     for (const auto &ss : spritesheets)
       sheet_by_id_[ss.id] = ss.pixmap;
 
-    /* Store layer defs for spritesheet lookup */
     layer_defs_ = layer_defs;
 
-    /* Compute total animation steps.
-       Each LayerAnimation[i].frames has some number of entries.
-       The animation steps through them -- when a layer runs out of
-       frames, it holds the last frame. Total steps = max across
-       all layer frame counts, capped by frame_num. */
-    int max_layer_frames = 0;
-    for (const auto &la : anim.layer_animations)
-      if (la.frames.size() > max_layer_frames)
-        max_layer_frames = la.frames.size();
-
-    total_steps_ = anim.frame_num;
-    if (total_steps_ <= 0)
-      total_steps_ = max_layer_frames;
+    /* Compute total animation steps using track_length_get */
+    total_steps_ = computeTotalFrames(anim);
     if (total_steps_ <= 0) {
       info_label_->setText("No animation frames found");
       return;
@@ -751,11 +1026,11 @@ public:
     anim_ = std::move(anim);
     has_data_ = true;
 
-    /* Default canvas: 400x300 -- will be adjusted per frame */
-    canvas_w_ = 400;
-    canvas_h_ = 300;
+    /* Compute fixed canvas size once (no canvas bouncing) */
+    auto [cw, ch] = computeAnimationRect(anim_, 400, 300);
+    canvas_w_ = cw;
+    canvas_h_ = ch;
 
-    /* FPS from file -- default 18 */
     int fps = readAnm2Fps(path);
     frame_interval_ms_ = 1000 / fps;
 
@@ -764,186 +1039,28 @@ public:
                              .arg(total_steps_)
                              .arg(fps));
 
-    renderStep(0);
+    /* Render first frame using on-demand rendering */
+    renderTime(0.0f);
     timer_ = new QTimer(this);
-    connect(timer_, &QTimer::timeout, this, &Anm2PreviewWidget::nextStep);
+    connect(timer_, &QTimer::timeout, this, &Anm2PreviewWidget::nextFrame);
     timer_->start(frame_interval_ms_);
   }
 
 private:
-  /* Find the spritesheet pixmap for a given layer id */
-  QPixmap *sheetForLayer(int layer_id) {
-    for (const auto &ld : layer_defs_) {
-      if (ld.id == layer_id) {
-        auto it = sheet_by_id_.find(ld.spritesheet_id);
-        if (it != sheet_by_id_.end() && !it->second.isNull())
-          return &it->second;
-      }
-    }
-    return nullptr;
-  }
-
-  void renderStep(int step) {
-    if (!has_data_ || step < 0 || step >= total_steps_)
+  /* Render a frame at the given time using on-demand interpolation */
+  void renderTime(float time) {
+    if (!has_data_)
       return;
 
-    /* -- Pass 1: compute bounding box -- */
-    int min_x = INT_MAX, min_y = INT_MAX;
-    int max_x = INT_MIN, max_y = INT_MIN;
-
-    auto updateBounds = [&](int x, int y, int w, int h) {
-      if (x < min_x)
-        min_x = x;
-      if (y < min_y)
-        min_y = y;
-      if (x + w > max_x)
-        max_x = x + w;
-      if (y + h > max_y)
-        max_y = y + h;
-    };
-
-    /* Root frame covers entire canvas */
-    updateBounds(anim_.root_frame.x_position, anim_.root_frame.y_position,
-                 canvas_w_, canvas_h_);
-
-    for (const auto &la : anim_.layer_animations) {
-      if (!la.visible)
-        continue;
-      int fi = qMin(step, la.frames.size() - 1);
-      if (fi < 0)
-        continue;
-      const Anm2Frame &fr = la.frames[fi];
-      if (!fr.visible)
-        continue;
-
-      int rx = fr.x_position - fr.x_pivot + fr.x_crop;
-      int ry = fr.y_position - fr.y_pivot + fr.y_crop;
-      int rw = fr.width > 0 ? fr.width : 64;
-      int rh = fr.height > 0 ? fr.height : 64;
-      updateBounds(rx, ry, rw, rh);
-    }
-
-    if (max_x <= min_x)
-      max_x = min_x + canvas_w_;
-    if (max_y <= min_y)
-      max_y = min_y + canvas_h_;
-
-    /* Add padding */
-    int pad = 10;
-    min_x -= pad;
-    min_y -= pad;
-    max_x += pad;
-    max_y += pad;
-
-    int w = max_x - min_x;
-    int h = max_y - min_y;
-    if (w <= 0 || h <= 0) {
-      w = 400;
-      h = 300;
-    }
-
-    QPixmap pm(w, h);
-    pm.fill(Qt::transparent);
-    QPainter p(&pm);
-    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    p.setRenderHint(QPainter::Antialiasing, false);
-
-    /* -- Pass 2: render layers in order -- */
-    int origin_x = -min_x;
-    int origin_y = -min_y;
-
-    /* Apply root transform */
-    double root_sx = anim_.root_frame.x_scale / 100.0;
-    double root_sy = anim_.root_frame.y_scale / 100.0;
-
-    for (const auto &la : anim_.layer_animations) {
-      if (!la.visible)
-        continue;
-      int fi = qMin(step, la.frames.size() - 1);
-      if (fi < 0)
-        continue;
-      const Anm2Frame &fr = la.frames[fi];
-      if (!fr.visible)
-        continue;
-
-      /* Find spritesheet for this layer */
-      QPixmap *sheet = sheetForLayer(la.layer_id);
-
-      /* Compute draw position */
-      double sx = fr.x_scale / 100.0 * root_sx;
-      double sy = fr.y_scale / 100.0 * root_sy;
-      int draw_x = origin_x + fr.x_position - fr.x_pivot;
-      int draw_y = origin_y + fr.y_position - fr.y_pivot;
-      int crop_w = fr.width;
-      int crop_h = fr.height;
-
-      /* If no crop specified, use full spritesheet or default size */
-      if (sheet && crop_w <= 0)
-        crop_w = sheet->width();
-      if (sheet && crop_h <= 0)
-        crop_h = sheet->height();
-      if (crop_w <= 0)
-        crop_w = 64;
-      if (crop_h <= 0)
-        crop_h = 64;
-
-      /* Draw the sprite or a colored placeholder */
-      if (sheet && !sheet->isNull()) {
-        QPixmap cropped = sheet->copy(fr.x_crop, fr.y_crop, crop_w, crop_h);
-        if (!cropped.isNull()) {
-          /* Apply scale */
-          int scaled_w = qMax(1, (int)(crop_w * sx));
-          int scaled_h = qMax(1, (int)(crop_h * sy));
-          QPixmap scaled =
-              cropped.scaled(scaled_w, scaled_h, Qt::IgnoreAspectRatio,
-                             Qt::FastTransformation);
-
-          /* Apply tint */
-          if (fr.red_tint != 255 || fr.green_tint != 255 ||
-              fr.blue_tint != 255 || fr.alpha_tint != 255 ||
-              fr.red_offset != 0 || fr.green_offset != 0 ||
-              fr.blue_offset != 0) {
-            QPainter sp(&scaled);
-            sp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            QColor tint(qBound(0, fr.red_tint + fr.red_offset, 255),
-                        qBound(0, fr.green_tint + fr.green_offset, 255),
-                        qBound(0, fr.blue_tint + fr.blue_offset, 255),
-                        qBound(0, fr.alpha_tint, 255));
-            sp.fillRect(scaled.rect(), tint);
-            sp.end();
-          }
-
-          /* Apply rotation */
-          if (fr.rotation != 0) {
-            QTransform t;
-            t.rotate(fr.rotation);
-            scaled = scaled.transformed(t, Qt::SmoothTransformation);
-          }
-
-          p.drawPixmap(draw_x, draw_y, scaled);
-        }
-      } else {
-        /* No spritesheet -- draw colored rectangle placeholder */
-        static const QColor kPalette[] = {
-            QColor(100, 120, 180), QColor(140, 100, 160), QColor(100, 160, 140),
-            QColor(180, 120, 100), QColor(120, 140, 160), QColor(160, 130, 130),
-        };
-        int ci = qAbs(la.layer_id) % 6;
-        int sw = qMax(1, (int)(crop_w * sx));
-        int sh = qMax(1, (int)(crop_h * sy));
-        p.fillRect(draw_x, draw_y, sw, sh, kPalette[ci]);
-        p.setPen(kPalette[ci].darker(130));
-        p.drawRect(draw_x, draw_y, sw, sh);
-      }
-    }
-
-    p.end();
-    label_->setPixmap(pm);
+    QImage canvas =
+        renderFrameAtTime(anim_, layer_defs_, sheet_by_id_, time,
+                          canvas_w_, canvas_h_);
+    label_->setPixmap(QPixmap::fromImage(canvas));
   }
 
-  void nextStep() {
+  void nextFrame() {
     step_ = (step_ + 1) % total_steps_;
-    renderStep(step_);
+    renderTime(static_cast<float>(step_));
     timer_->start(frame_interval_ms_);
   }
 
@@ -963,7 +1080,7 @@ private:
   /* Playback state */
   int step_ = 0;
   int total_steps_ = 0;
-  int frame_interval_ms_ = 55; /* ~18 fps default */
+  int frame_interval_ms_ = 55;
 };
 
 /* --------------------------------------------------------------------------
@@ -996,17 +1113,12 @@ void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
   if (ctx->register_category)
     ctx->register_category(ctx, "File Support");
 
-  /* Capture host services */
   g_resolve_file = ctx->resolve_file;
 
-  /* Register standalone preview widget */
   if (ctx->register_preview) {
     ctx->register_preview(ctx, ".anm2", nullptr, anm2_preview, nullptr);
   }
 
-  /* Register animation parser for the Core's AnimationParserFeature.
-   * NULL game_id = non-game-specific (applies to every game).
-   * This populates rgba_pixels so PreviewWidget::try_load_anm2() works. */
   if (ctx->register_animation_parser) {
     ctx->register_animation_parser(ctx, nullptr, ".anm2", anm2_parse, 10,
                                    nullptr);
