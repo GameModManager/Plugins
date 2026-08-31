@@ -5,7 +5,7 @@
  * for Isaac instances via the GMM ABI. Core has zero Isaac-specific code.
  */
 
-#include "gmm_abi_v1.h"
+#include "gmm_abi_v2.h"
 #include "ModSorterProvider.h"
 
 #include <cstdio>
@@ -56,7 +56,7 @@ extern "C" uint32_t gmm_abi_version(void) {
     return GMM_ABI_VERSION;
 }
 
-extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
+extern "C" void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
     if (!ctx) return;
 
     // Create the provider
@@ -83,16 +83,31 @@ extern "C" void gmm_register_v1(GmmRegistrationCtx* ctx) {
 
     g_provider->load_masterlist(bundled_masterlist);
 
-    // Register with the engine
-    ctx->register_sort_provider(ctx, "TheBindingOfIsaacRebirth", isaac_sort, nullptr);
+    // Register the game this sort provider belongs to. v2's register_sort_provider
+    // takes no game_id (unlike v1), so the engine scopes the provider to this
+    // plugin's own game_id — which we set here. This mirrors the v1 call that
+    // passed "TheBindingOfIsaacRebirth" explicitly to register_sort_provider.
+    GmmGameInfo game{};
+    game.game_id = "TheBindingOfIsaacRebirth";
+    game.display_name = "The Binding of Isaac: Rebirth";
+    game.steam_appid = 250900;
+    game.nexus_domain = "thebindingofisaacrebirth";
+    ctx->register_game(ctx, game);
 
-    if (ctx->register_meta) {
-        ctx->register_meta(ctx, "GameModManager Team", VERSION,
-                           "LOOT-style mod sorter for The Binding of Isaac: Rebirth");
-    }
-    if (ctx->register_category) {
+    // Register the sort provider with the engine (scoped to the game above).
+    ctx->register_sort_provider(ctx, isaac_sort, nullptr);
+
+    // Plugin metadata
+    GmmPluginInfo info{};
+    info.name = "Isaac Mod Sorter";
+    info.author = "GameModManager Team";
+    info.version = VERSION;
+    info.description =
+        "LOOT-style mod sorter for The Binding of Isaac: Rebirth";
+    ctx->register_plugin(ctx, info);
+
+    if (ctx->register_category)
         ctx->register_category(ctx, "Tool");
-    }
 
     // User-facing options (key:value pairs, rendered as editable rows in the
     // Plugins settings tab).

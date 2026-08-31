@@ -1,10 +1,10 @@
 /**
- * FOMOD Installer Plugin — thin orchestrator for FOMOD mod archives
+ * FOMOD Installer Plugin — thin orchestrator for FOMOD mod archives (v2 ABI)
  *
  * Non-game-specific plugin. Claims the "Fomod" pipeline stage via a wildcard
  * stage claim so it applies to every game. The actual FOMOD detection, XML
  * parsing, and file installation are done host-side by the engine's FomodStage
- * through the P1.4 host_ui.fomod_wizard bridge.
+ * through the host_ui.fomod_wizard bridge.
  *
  * This plugin:
  *   1. Claims the "Fomod" stage at priority 10 (wins over the core baseline
@@ -15,15 +15,15 @@
  *   4. Reports identity under the "Installer" category in the Plugins tab.
  *
  * Build: shared library (MODULE), no Qt, no engine linkage — uses only the
- * stable C ABI from gmm_abi_v1.h.
+ * stable C ABI from gmm_abi_v2.h.
  */
 
-#include "gmm_abi_v1.h"
+#include "gmm_abi_v2.h"
 
 #include <cstring>
 
 /* -- Host UI bridge pointer, cached during registration -- */
-static GmmFomodWizardFn s_fomod_wizard = nullptr;
+static int (*s_fomod_wizard)(void*, char*, size_t) = nullptr;
 
 /* --------------------------------------------------------------------------
  * Stage handler — called on the pipeline thread for each mod install.
@@ -39,10 +39,10 @@ static GmmFomodWizardFn s_fomod_wizard = nullptr;
  *   "canceled"   — user aborted wizard, pipeline stops
  *   "failed"     — install error, pipeline stops
  * ------------------------------------------------------------------------ */
-static int fomod_stage_handler(GmmModHandle mod,
-                               GmmInstanceHandle instance,
-                               GmmConflictIndexHandle conflicts,
-                               GmmProfileHandle profile,
+static int fomod_stage_handler(void* mod,
+                               void* instance,
+                               void* conflicts,
+                               void* profile,
                                void* user_data) {
     (void)instance;
     (void)conflicts;
@@ -74,7 +74,10 @@ uint32_t gmm_abi_version() {
     return GMM_ABI_VERSION;
 }
 
-void gmm_register_v1(GmmRegistrationCtx* ctx) {
+void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
+    if (!ctx)
+        return;
+
     /* Save the host UI bridge for use in the stage handler.
      * The function pointer is stable for the process lifetime. */
     if (ctx->host_ui.fomod_wizard) {
@@ -82,12 +85,13 @@ void gmm_register_v1(GmmRegistrationCtx* ctx) {
     }
 
     /* -- Metadata -- */
-    if (ctx->register_meta) {
-        ctx->register_meta(ctx,
-            "GameModManager Team",                       /* author */
-            "1.0.0",                                     /* version */
-            "FOMOD installer — detects and installs FOMOD archives via the wizard");
-    }
+    GmmPluginInfo info{};
+    info.name = "FOMOD Installer";
+    info.author = "GameModManager Team";
+    info.version = "1.0.0";
+    info.description =
+        "FOMOD installer — detects and installs FOMOD archives via the wizard";
+    ctx->register_plugin(ctx, info);
 
     /* -- Category for the Plugins settings tab -- */
     if (ctx->register_category) {
