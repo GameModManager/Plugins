@@ -395,11 +395,20 @@ void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
      * mods on macOS: ~/Library/Application Support/, NOT inside the game
      * install directory. The engine expands ~ against $HOME and uses this
      * as the game-native mods dir (scan, conflict sources, deploy target)
-     * instead of game_dir/mods. Compiled per-platform, so only the macOS
-     * build declares it; Windows/Linux keep game_dir/mods via mods_subpath. */
+     * instead of game_dir/mods. */
     ctx->register_hook(ctx,
         "game_mods_dir",
         "~/Library/Application Support/Binding of Isaac Afterbirth+ Mods",
+        nullptr, 0, nullptr);
+#else
+    /* Linux/Windows game mods dir -- Isaac reads mods from game_dir/mods
+     * (Steam Workshop downloads land here). Declared RELATIVE to the game
+     * install dir; the engine resolves it against game_dir. This is the
+     * explicit opt-in that makes game_dir/mods a scan source merged with
+     * the instance mods dir (Workspace-9szv). */
+    ctx->register_hook(ctx,
+        "game_mods_dir",
+        "mods",
         nullptr, 0, nullptr);
 #endif
 
