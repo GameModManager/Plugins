@@ -457,7 +457,7 @@ void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
 
     /* Download sources -- comma-separated list of source names for status bar */
     ctx->register_hook(ctx,
-        "download_sources", "Nexus,Steam",
+        "download_sources", "Nexus Mods,Steam",
         nullptr, 0, nullptr);
 
     /* Mod counter label -- how to label the mod count in status bar.

@@ -102,7 +102,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
   );
 
   /* Download sources — for status bar display */
-  ctx->register_hook(ctx, "download_sources", "Nexus,LoversLab", nullptr, 0, nullptr);
+  ctx->register_hook(ctx, "download_sources", "Nexus Mods,LoversLab", nullptr, 0, nullptr);
 
   /* Mod counter label — "Plugins" for Skyrim (ESM/ESP/ESL load order) */
   ctx->register_hook(ctx, "mod_counter_label", "Plugins", nullptr, 0, nullptr);
