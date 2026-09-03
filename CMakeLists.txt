@@ -49,7 +49,9 @@ add_game_plugin(FomodInstaller
 )
 
 add_game_plugin(ANM2
-    src/plugins/FileSupport/ANM2/anm2.cpp
+    src/plugins/FileSupport/ANM2/anm2_plugin.cpp
+    src/plugins/FileSupport/ANM2/anm2_parser.cpp
+    src/plugins/FileSupport/ANM2/anm2_renderer.cpp
 )
 target_link_libraries(ANM2 PRIVATE Qt6::Widgets)
 
