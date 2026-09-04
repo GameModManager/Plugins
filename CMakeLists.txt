@@ -37,11 +37,11 @@ endfunction()
 
 # Game plugins
 add_game_plugin(SkyrimSpecialEdition
-    src/plugins/SkyrimSpecialEdition/GameSupport/SkyrimSpecialEdition.cpp
+    src/plugins/GameSupport/SkyrimSpecialEdition/SkyrimSpecialEdition.cpp
 )
 
 add_game_plugin(TheBindingOfIsaacRebirth
-    src/plugins/TheBindingOfIsaacRebirth/GameSupport/TheBindingOfIsaacRebirth.cpp
+    src/plugins/GameSupport/TheBindingOfIsaacRebirth/TheBindingOfIsaacRebirth.cpp
 )
 
 add_game_plugin(FomodInstaller
@@ -60,9 +60,9 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)
 
 add_library(IsaacModSorter MODULE
-    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorter.cpp
-    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/ModSorterProvider.cpp
-    src/plugins/TheBindingOfIsaacRebirth/Tools/ModSorter/AutoSorter.cpp
+    src/plugins/Tool/ModSorter/ModSorter.cpp
+    src/plugins/Tool/ModSorter/ModSorterProvider.cpp
+    src/plugins/Tool/ModSorter/AutoSorter.cpp
 )
 target_include_directories(IsaacModSorter PRIVATE
     ${ABI_INCLUDE_DIR}
@@ -83,7 +83,7 @@ set_target_properties(IsaacModSorter PROPERTIES
 find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
 add_library(EventBusViewer MODULE
-    src/plugins/EventBusViewer/event_bus_viewer.cpp
+    src/plugins/Tool/EventBusViewer/event_bus_viewer.cpp
 )
 target_include_directories(EventBusViewer PRIVATE
     ${ABI_INCLUDE_DIR}
@@ -97,7 +97,7 @@ set_target_properties(EventBusViewer PROPERTIES
 )
 
 # Wine.json for Skyrim
-set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/SkyrimSpecialEdition/GameSupport/wine.json")
+set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/GameSupport/SkyrimSpecialEdition/wine.json")
 if(EXISTS "${WINE_JSON}")
     configure_file(
         "${WINE_JSON}"
