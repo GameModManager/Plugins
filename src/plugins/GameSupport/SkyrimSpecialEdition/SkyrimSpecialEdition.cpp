@@ -11,9 +11,12 @@
  *   (Nexus)
  * - Tools: LOOT (advisory - sorted plugin list feeds into
  * load order)
+ * - Save parser: GMM_Gamebryo packet handles skyrim, skyrimse, skyrimvr
  */
 
 #include "plugin.hpp"
+
+#include "SkyrimSESaveParser.h"
 
 #include <cstdio>
 #include <cstring>
@@ -99,7 +102,12 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
       .tool("loot", "advisory")
       /* LOOT identity */
       .hook("loot_game_id", "skyrimse")
-      .hook("loot_masterlist_repo", "skyrimse");
+      .hook("loot_masterlist_repo", "skyrimse")
+      /* Save parser: shared GMM_Gamebryo packet, registered for all three
+         Gamebryo save game_ids so the Saves tab can read .ess files. */
+      .save_parser("skyrim", &skyrim_save_parser)
+      .save_parser("skyrimse", &skyrimse_save_parser)
+      .save_parser("skyrimvr", &skyrimvr_save_parser);
 }
 
 /* -- Version guard -- */

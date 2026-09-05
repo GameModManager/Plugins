@@ -25,8 +25,25 @@ foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../Core/src/engine"
     endif()
 endforeach()
 
-function(add_game_plugin NAME SOURCE)
-    add_library(${NAME} MODULE ${SOURCE})
+# Shared packet: Gamebryo save parsing.
+# Vendors its own private GamebryoSaveReader (no Core dependency) so a
+# future Bethesda game plugin (FO4, etc.) can link GMM_Gamebryo without
+# pulling in engine headers.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZLIB REQUIRED IMPORTED_TARGET zlib)
+pkg_check_modules(LZ4 REQUIRED IMPORTED_TARGET liblz4)
+
+add_library(GMM_Gamebryo STATIC
+    src/shared/Gamebryo/GamebryoSaveReader.cpp
+    src/shared/Gamebryo/GamebryoSaveGame.cpp
+    src/shared/Gamebryo/SkyrimSaveGame.cpp
+    src/shared/Gamebryo/SkyrimSESaveGame.cpp
+)
+target_include_directories(GMM_Gamebryo PUBLIC src/shared/Gamebryo)
+target_link_libraries(GMM_Gamebryo PUBLIC PkgConfig::ZLIB PkgConfig::LZ4)
+
+function(add_game_plugin NAME)
+    add_library(${NAME} MODULE ${ARGN})
     target_include_directories(${NAME} PRIVATE ${ABI_INCLUDE_DIR})
     target_compile_definitions(${NAME} PRIVATE VERSION="${GMM_VERSION}")
     set_target_properties(${NAME} PROPERTIES
@@ -38,6 +55,11 @@ endfunction()
 # Game plugins
 add_game_plugin(SkyrimSpecialEdition
     src/plugins/GameSupport/SkyrimSpecialEdition/SkyrimSpecialEdition.cpp
+    src/plugins/GameSupport/SkyrimSpecialEdition/SkyrimSESaveParser.cpp
+)
+target_link_libraries(SkyrimSpecialEdition PRIVATE GMM_Gamebryo)
+target_include_directories(SkyrimSpecialEdition PRIVATE
+    src/plugins/GameSupport/SkyrimSpecialEdition
 )
 
 add_game_plugin(TheBindingOfIsaacRebirth
