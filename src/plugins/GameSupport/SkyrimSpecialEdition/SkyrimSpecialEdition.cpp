@@ -103,14 +103,22 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
       /* LOOT identity */
       .hook("loot_game_id", "skyrimse")
       .hook("loot_masterlist_repo", "skyrimse")
-      /* Save parser: shared GMM_Gamebryo packet, registered for all three
-         Gamebryo save game_ids so the Saves tab can read .ess files. */
+      /* Save parser: shared GMM_Gamebryo packet. Registered under the
+         plugin's own game_id ("SkyrimSpecialEdition", what instances
+         carry) plus the three Gamebryo short names - the Saves scan
+         looks parsers up by instance game_id, so omitting our own id
+         silently falls back to the metadata-less stub. */
+      .save_parser("SkyrimSpecialEdition", &skyrimse_save_parser)
       .save_parser("skyrim", &skyrim_save_parser)
       .save_parser("skyrimse", &skyrimse_save_parser)
       .save_parser("skyrimvr", &skyrimvr_save_parser)
       /* Save overlay: per-game rich metadata (Saves tab generic widget). */
+      .save_overlay("SkyrimSpecialEdition", &skyrimse_save_overlay)
       .save_overlay("skyrimse", &skyrimse_save_overlay)
       /* Game variants: distinguish Steam / GOG / Epic installs of SkyrimSE. */
+      .game_variant("SkyrimSpecialEdition", "steam", "Steam")
+      .game_variant("SkyrimSpecialEdition", "gog", "GOG")
+      .game_variant("SkyrimSpecialEdition", "epic", "Epic Games Store")
       .game_variant("skyrimse", "steam", "Steam")
       .game_variant("skyrimse", "gog", "GOG")
       .game_variant("skyrimse", "epic", "Epic Games Store");
