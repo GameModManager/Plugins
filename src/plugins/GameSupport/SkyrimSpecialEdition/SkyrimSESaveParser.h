@@ -23,7 +23,10 @@ extern "C"
                            void* user_data);
 
   int skyrimvr_save_parser(const char* path, const char* game_id, GmmSaveDataV2* out,
-                           void* user_data);
+                          void* user_data);
+
+  GmmSaveOverlayV2* skyrimse_save_overlay(const GmmSaveDataV2* save,
+                                          void* user_data);
 
 #ifdef __cplusplus
 }

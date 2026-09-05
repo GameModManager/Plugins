@@ -107,11 +107,32 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
          Gamebryo save game_ids so the Saves tab can read .ess files. */
       .save_parser("skyrim", &skyrim_save_parser)
       .save_parser("skyrimse", &skyrimse_save_parser)
-      .save_parser("skyrimvr", &skyrimvr_save_parser);
+      .save_parser("skyrimvr", &skyrimvr_save_parser)
+      /* Save overlay: per-game rich metadata (Saves tab generic widget). */
+      .save_overlay("skyrimse", &skyrimse_save_overlay)
+      /* Game variants: distinguish Steam / GOG / Epic installs of SkyrimSE. */
+      .game_variant("skyrimse", "steam", "Steam")
+      .game_variant("skyrimse", "gog", "GOG")
+      .game_variant("skyrimse", "epic", "Epic Games Store");
 }
 
 /* -- Version guard -- */
 extern "C" uint32_t gmm_abi_version(void)
 {
   return GMM_ABI_VERSION;
+}
+
+/* -- v2.1 feature bits --
+ * Tells the engine which additive GmmSaveDataV2 fields and registration
+ * slots this .so actually populates. The Core bridge probes this via dlsym
+ * and gates the new-field copy on the matching bit (see plugin_loader.h
+ * GMM_FEATURE_*). Set ONLY the bits we really fill; missing bits = the
+ * engine treats those fields as absent, matching pre-v2.1 behavior.
+ */
+extern "C" uint64_t gmm_abi_features(void)
+{
+  // Bit numbers mirror GMM_FEATURE_* in Core's plugin_loader.h:
+  //   SAVE_SCREENSHOT=0, SAVE_ALL_FILES=1, SAVE_MEDIUM=2,
+  //   SAVE_OVERLAY=3, GAME_VARIANTS=4.
+  return (1ull << 0) | (1ull << 1) | (1ull << 3) | (1ull << 4);
 }
