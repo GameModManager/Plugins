@@ -1,13 +1,14 @@
 #pragma once
 
-#include "sort_provider.h"
+#include "sorter/interface.h"
 #include "AutoSorter.h"
 
 #include <string>
 
 namespace engine {
+namespace Sorter {
 
-class IsaacSortProvider : public SortProvider {
+class IsaacSortProvider : public Interface {
 public:
     IsaacSortProvider();
 
@@ -18,7 +19,7 @@ public:
     void load_user_rules(const std::string& yaml_text);
 
     // Sort mods and evaluate tags
-    ModSortResult sort(const std::vector<SortModInfo>& mods) const override;
+    Result sort(const std::vector<ModInfo>& mods) const override;
 
     // Provider name
     const char* name() const override { return "IsaacAutoSorter"; }
@@ -27,4 +28,5 @@ private:
     IsaacAutoSorter sorter_;
 };
 
+}  // namespace Sorter
 }  // namespace engine

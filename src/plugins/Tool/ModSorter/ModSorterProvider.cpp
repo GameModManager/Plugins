@@ -1,6 +1,7 @@
 #include "ModSorterProvider.h"
 
 namespace engine {
+namespace Sorter {
 
 IsaacSortProvider::IsaacSortProvider() = default;
 
@@ -12,10 +13,10 @@ void IsaacSortProvider::load_user_rules(const std::string& yaml_text) {
     sorter_.load_user_rules(yaml_text);
 }
 
-ModSortResult IsaacSortProvider::sort(const std::vector<SortModInfo>& mods) const {
-    ModSortResult result;
+Result IsaacSortProvider::sort(const std::vector<ModInfo>& mods) const {
+    Result result;
 
-    // Convert core SortModInfo to IsaacSortModInfo
+    // Convert core ModInfo to IsaacSortModInfo
     std::vector<IsaacSortModInfo> isaac_mods;
     for (const auto& mod : mods) {
         IsaacSortModInfo info;
@@ -43,7 +44,7 @@ ModSortResult IsaacSortProvider::sort(const std::vector<SortModInfo>& mods) cons
 
         auto tags = sorter_.evaluate_tags(mod.workshop_id, installed_ids);
         for (const auto& tag : tags) {
-            ModSortResult::TagInfo tag_info;
+            Result::TagInfo tag_info;
             tag_info.folder_name = mod.folder_name;
             tag_info.type = tag.type;
             tag_info.message = tag.message;
@@ -54,4 +55,5 @@ ModSortResult IsaacSortProvider::sort(const std::vector<SortModInfo>& mods) cons
     return result;
 }
 
+}  // namespace Sorter
 }  // namespace engine
