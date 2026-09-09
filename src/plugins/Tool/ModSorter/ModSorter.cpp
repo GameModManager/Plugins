@@ -1,5 +1,5 @@
 /**
- * Isaac Sort Plugin — Auto-sort + tag evaluation for The Binding of Isaac
+ * Isaac Sort Plugin - Auto-sort + tag evaluation for The Binding of Isaac
  *
  * Separate plugin shipped as .so/.dll/.dylib. Registers a sort provider
  * for Isaac instances via the GMM ABI. Core has zero Isaac-specific code.
@@ -12,7 +12,7 @@
 #include <cstring>
 #include <memory>
 
-static std::unique_ptr<engine::IsaacSortProvider> g_provider;
+static std::unique_ptr<engine::Sorter::IsaacSortProvider> g_provider;
 
 /* -- C ABI sort function called by the engine -- */
 static const char* const* isaac_sort(const char* const* mod_folders,
@@ -20,10 +20,10 @@ static const char* const* isaac_sort(const char* const* mod_folders,
                                       void* user_data) {
     if (!g_provider) return nullptr;
 
-    // Build SortModInfo list from folder names
-    std::vector<engine::SortModInfo> mods;
+    // Build ModInfo list from folder names
+    std::vector<engine::Sorter::ModInfo> mods;
     for (size_t i = 0; i < count; ++i) {
-        engine::SortModInfo info;
+        engine::Sorter::ModInfo info;
         info.folder_name = mod_folders[i] ? mod_folders[i] : "";
         info.display_name = info.folder_name;  // Will be replaced by sorter
 
@@ -60,7 +60,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
     if (!ctx) return;
 
     // Create the provider
-    g_provider = std::make_unique<engine::IsaacSortProvider>();
+    g_provider = std::make_unique<engine::Sorter::IsaacSortProvider>();
 
     // Try to load bundled masterlist (embedded as string literal for now)
     // In production, this would be loaded from a file or URL
@@ -85,7 +85,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
 
     // Register the game this sort provider belongs to. v2's register_sort_provider
     // takes no game_id (unlike v1), so the engine scopes the provider to this
-    // plugin's own game_id — which we set here. This mirrors the v1 call that
+    // plugin's own game_id - which we set here. This mirrors the v1 call that
     // passed "TheBindingOfIsaacRebirth" explicitly to register_sort_provider.
     GmmGameInfo game{};
     game.game_id = "TheBindingOfIsaacRebirth";
