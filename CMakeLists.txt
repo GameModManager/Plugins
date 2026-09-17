@@ -118,12 +118,15 @@ set_target_properties(EventBusViewer PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
 )
 
-# Wine.json for Skyrim
-set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/GameSupport/SkyrimSpecialEdition/wine.json")
-if(EXISTS "${WINE_JSON}")
-    configure_file(
-        "${WINE_JSON}"
-        "${CMAKE_BINARY_DIR}/plugins/SkyrimSpecialEdition/wine.json"
-        COPYONLY
-    )
-endif()
+# Wine.json files shipped next to each game plugin (<game_id>/wine.json).
+# The UI reads them as "Recommended Wine Packages".
+foreach(GAME_ID SkyrimSpecialEdition TheBindingOfIsaacRebirth)
+    set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/GameSupport/${GAME_ID}/wine.json")
+    if(EXISTS "${WINE_JSON}")
+        configure_file(
+            "${WINE_JSON}"
+            "${CMAKE_BINARY_DIR}/plugins/${GAME_ID}/wine.json"
+            COPYONLY
+        )
+    endif()
+endforeach()
