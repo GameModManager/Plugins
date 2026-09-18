@@ -307,6 +307,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
       .hook("workshop_id_pattern", WORKSHOP_ID_PATTERN)
       .hook("auto_sort_groups", AUTO_SORT_GROUPS)
       .hook("workshop_tag_categories", WORKSHOP_TAG_CATEGORIES)
+      .hook("metadata_tag_element", "tag")
       .hook("masterlist_url",
             "https://raw.githubusercontent.com/GameModManager/Masterlist/"
             "refs/heads/main/games/thebindingofisaacrebirth/masterlist.yaml")
