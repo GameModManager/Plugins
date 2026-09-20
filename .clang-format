@@ -1,0 +1,23 @@
+---
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+IndentWidth: 2
+---
+Language: Cpp
+DeriveLineEnding: false
+UseCRLF: false
+DerivePointerAlignment: false
+PointerAlignment: Left
+AlignConsecutiveAssignments: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: Yes
+AccessModifierOffset: -2
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 2
+NamespaceIndentation: Inner
+MaxEmptyLinesToKeep: 1
+BreakBeforeBraces: Attach
+ColumnLimit: 88
+ForEachMacros: ['Q_FOREACH', 'foreach']
