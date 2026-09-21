@@ -124,8 +124,7 @@ static const char* GAME_VERSIONS = "{"
  * feature can persist the intended priority.
  */
 static int isaac_order_encoding(const char* const* ordered_mod_ids, size_t count,
-                                const char* output_path, void* user_data)
-{
+                                const char* output_path, void* user_data) {
   FILE* f = fopen(output_path, "w");
   if (!f)
     return 0;
@@ -239,8 +238,7 @@ static const char* WORKSHOP_TAG_CATEGORIES = "{"
  * Registration entry point
  *
  * ========================================================================= */
-extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
-{
+extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw) {
   if (!raw)
     return;
 
@@ -312,6 +310,9 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
             "https://raw.githubusercontent.com/GameModManager/Masterlist/"
             "refs/heads/main/games/thebindingofisaacrebirth/masterlist.yaml")
       .hook("steam_app_name", "The Binding of Isaac Rebirth")
+      .hook("mygames_folder", "Binding of Isaac Repentance+")
+      .hook("saves_subpath", "")
+      .hook("steam_userdata_saves", "remote")
       .hook("mods_subpath", "mods")
       .hook("deploy_prefix", "mods")
 #ifdef __APPLE__
@@ -336,7 +337,6 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
 }
 
 /* -- Version guard -- */
-extern "C" uint32_t gmm_abi_version(void)
-{
+extern "C" uint32_t gmm_abi_version(void) {
   return GMM_ABI_VERSION;
 }
