@@ -313,6 +313,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw) {
       .hook("mygames_folder", "Binding of Isaac Repentance+")
       .hook("saves_subpath", "")
       .hook("steam_userdata_saves", "remote")
+      .hook("save_extensions", "dat")
       .hook("mods_subpath", "mods")
       .hook("deploy_prefix", "mods")
 #ifdef __APPLE__
