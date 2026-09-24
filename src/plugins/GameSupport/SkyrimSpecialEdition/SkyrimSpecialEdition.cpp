@@ -113,6 +113,11 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *raw) {
       /* Save overlay: per-game rich metadata (Saves tab generic widget). */
       .save_overlay("SkyrimSpecialEdition", &skyrimse_save_overlay)
       .save_overlay("skyrimse", &skyrimse_save_overlay)
+      /* Fast-scan format: routes Saves scans through Core's
+         header+screenshot-skip+capped-inflate reader ("gamebryo-tesv",
+         see Core save_fast_scan.h). Scoped to our own game_id by the
+         hook registration - instances carry "SkyrimSpecialEdition". */
+      .hook("save_fast_format", "gamebryo-tesv")
       /* Game variants: distinguish Steam / GOG / Epic installs of SkyrimSE. */
       .game_variant("SkyrimSpecialEdition", "steam", "Steam")
       .game_variant("SkyrimSpecialEdition", "gog", "GOG")
