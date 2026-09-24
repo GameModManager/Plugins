@@ -28,25 +28,22 @@
 #include <string>
 #include <vector>
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
 // Thrown on any malformed/truncated input. Mirrors MO2's std::runtime_error
 // contract so the engine-side scanner's `catch` keeps working unchanged.
-class SaveParseError : public std::runtime_error
-{
+class SaveParseError : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;
 };
 
-class GamebryoSaveReader
-{
+class GamebryoSaveReader {
 public:
   // Loads `path`, verifies the first `expected_magic` bytes, positions the
   // cursor just past the magic. Throws SaveParseError on open failure or
   // magic mismatch.
-  GamebryoSaveReader(const std::filesystem::path& path,
-                     const std::string& expected_magic);
+  GamebryoSaveReader(const std::filesystem::path &path,
+                     const std::string &expected_magic);
 
   // --- raw little-endian primitives; all throw SaveParseError on EOF ---
   std::uint8_t u8();
@@ -76,8 +73,8 @@ public:
 private:
   static std::vector<std::uint8_t>
   inflate_chunks(std::uint64_t start, std::uint64_t total_uncompressed,
-                 const std::vector<std::uint8_t>& file);
-  static std::vector<std::uint8_t> lz4_decompress(const std::string& compressed,
+                 const std::vector<std::uint8_t> &file);
+  static std::vector<std::uint8_t> lz4_decompress(const std::string &compressed,
                                                   std::uint32_t uncompressed_size);
 
   std::vector<std::uint8_t> buf_;   // file content, or decompressed region

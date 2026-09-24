@@ -18,13 +18,11 @@
 
 #include "GamebryoSaveGame.h"
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
-class SkyrimSaveGame : public GamebryoSaveGame
-{
+class SkyrimSaveGame : public GamebryoSaveGame {
 public:
-  SkyrimSaveGame(const std::filesystem::path& path, std::string game_id);
+  SkyrimSaveGame(const std::filesystem::path &path, std::string game_id);
 
   void fetch_data_fields() override;
 };

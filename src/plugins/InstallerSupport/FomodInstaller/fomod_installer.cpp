@@ -23,7 +23,7 @@
 #include <cstring>
 
 /* -- Host UI bridge pointer, cached during registration -- */
-static int (*s_fomod_wizard)(void*, char*, size_t) = nullptr;
+static int (*s_fomod_wizard)(void *, char *, size_t) = nullptr;
 
 /* --------------------------------------------------------------------------
  * Stage handler — called on the pipeline thread for each mod install.
@@ -39,30 +39,32 @@ static int (*s_fomod_wizard)(void*, char*, size_t) = nullptr;
  *   "canceled"   — user aborted wizard, pipeline stops
  *   "failed"     — install error, pipeline stops
  * ------------------------------------------------------------------------ */
-static int fomod_stage_handler(void* mod,
-                               void* instance,
-                               void* conflicts,
-                               void* profile,
-                               void* user_data) {
-    (void)instance;
-    (void)conflicts;
-    (void)profile;
-    (void)user_data;
+static int fomod_stage_handler(void *mod, void *instance, void *conflicts,
+                               void *profile, void *user_data) {
+  (void)instance;
+  (void)conflicts;
+  (void)profile;
+  (void)user_data;
 
-    if (!s_fomod_wizard) return 1;  /* No wizard wired — pass through */
+  if (!s_fomod_wizard)
+    return 1; /* No wizard wired — pass through */
 
-    char json_buf[4096];
-    const int ok = s_fomod_wizard(mod, json_buf, sizeof(json_buf));
-    if (!ok) return 0;
+  char json_buf[4096];
+  const int ok = s_fomod_wizard(mod, json_buf, sizeof(json_buf));
+  if (!ok)
+    return 0;
 
-    /* Interpret the outcome. The host's FomodStage already applied the
-     * choices to the staging directory when it returned ok=1. We only need
-     * to propagate success/failure to the pipeline. */
-    if (std::strstr(json_buf, "\"outcome\":\"not_fomod\"")) return 1;  /* pass through */
-    if (std::strstr(json_buf, "\"outcome\":\"canceled\""))  return 0;  /* user abort */
-    if (std::strstr(json_buf, "\"outcome\":\"failed\""))    return 0;  /* install error */
-    /* "installed" or anything else — success */
-    return ok;
+  /* Interpret the outcome. The host's FomodStage already applied the
+   * choices to the staging directory when it returned ok=1. We only need
+   * to propagate success/failure to the pipeline. */
+  if (std::strstr(json_buf, "\"outcome\":\"not_fomod\""))
+    return 1; /* pass through */
+  if (std::strstr(json_buf, "\"outcome\":\"canceled\""))
+    return 0; /* user abort */
+  if (std::strstr(json_buf, "\"outcome\":\"failed\""))
+    return 0; /* install error */
+  /* "installed" or anything else — success */
+  return ok;
 }
 
 /* --------------------------------------------------------------------------
@@ -71,61 +73,60 @@ static int fomod_stage_handler(void* mod,
 extern "C" {
 
 uint32_t gmm_abi_version() {
-    return GMM_ABI_VERSION;
+  return GMM_ABI_VERSION;
 }
 
-void gmm_register_v2(GmmRegistrationCtxV2* ctx) {
-    if (!ctx)
-        return;
+void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
+  if (!ctx)
+    return;
 
-    /* Save the host UI bridge for use in the stage handler.
-     * The function pointer is stable for the process lifetime. */
-    if (ctx->host_ui.fomod_wizard) {
-        s_fomod_wizard = ctx->host_ui.fomod_wizard;
-    }
+  /* Save the host UI bridge for use in the stage handler.
+   * The function pointer is stable for the process lifetime. */
+  if (ctx->host_ui.fomod_wizard) {
+    s_fomod_wizard = ctx->host_ui.fomod_wizard;
+  }
 
-    /* -- Metadata -- */
-    GmmPluginInfo info{};
-    info.name = "FOMOD Installer";
-    info.author = "GameModManager Team";
-    info.version = "1.0.0";
-    info.description =
-        "FOMOD installer — detects and installs FOMOD archives via the wizard";
-    ctx->register_plugin(ctx, info);
+  /* -- Metadata -- */
+  GmmPluginInfo info{};
+  info.name    = "FOMOD Installer";
+  info.author  = "GameModManager Team";
+  info.version = "1.0.0";
+  info.description =
+      "FOMOD installer — detects and installs FOMOD archives via the wizard";
+  ctx->register_plugin(ctx, info);
 
-    /* -- Category for the Plugins settings tab -- */
-    if (ctx->register_category) {
-        ctx->register_category(ctx, "Installer");
-    }
+  /* -- Category for the Plugins settings tab -- */
+  if (ctx->register_category) {
+    ctx->register_category(ctx, "Installer");
+  }
 
-    /* -- Claim the "Fomod" pipeline stage (wildcard — applies to all games) --
-     *
-     * Uses register_wildcard_stage_claim with game_id=NULL (wildcard) so this
-     * plugin handles FOMOD for every game. Game-specific plugins can override
-     * at equal or higher priority if needed.
-     *
-     * Priority 10: wins over the core baseline (0), leaves room for
-     * game-specific overrides at higher priority. */
-    if (ctx->register_wildcard_stage_claim) {
-        ctx->register_wildcard_stage_claim(ctx,
-            nullptr,            /* game_id — NULL = wildcard (all games) */
-            "Fomod",            /* stage name */
-            fomod_stage_handler,
-            10);                /* priority */
-    }
+  /* -- Claim the "Fomod" pipeline stage (wildcard — applies to all games) --
+   *
+   * Uses register_wildcard_stage_claim with game_id=NULL (wildcard) so this
+   * plugin handles FOMOD for every game. Game-specific plugins can override
+   * at equal or higher priority if needed.
+   *
+   * Priority 10: wins over the core baseline (0), leaves room for
+   * game-specific overrides at higher priority. */
+  if (ctx->register_wildcard_stage_claim) {
+    ctx->register_wildcard_stage_claim(
+        ctx, nullptr,             /* game_id — NULL = wildcard (all games) */
+        "Fomod",                  /* stage name */
+        fomod_stage_handler, 10); /* priority */
+  }
 
-    /* -- Settings (key-value pairs) -- */
-    if (ctx->register_settings) {
-        static const char* keys[] = {
-            "Restore previous choices",
-            "Show FOMOD images",
-        };
-        static const char* values[] = {
-            "1",  // default: enabled
-            "1",  // default: enabled
-        };
-        ctx->register_settings(ctx, keys, values, 2);
-    }
+  /* -- Settings (key-value pairs) -- */
+  if (ctx->register_settings) {
+    static const char *keys[] = {
+        "Restore previous choices",
+        "Show FOMOD images",
+    };
+    static const char *values[] = {
+        "1",  // default: enabled
+        "1",  // default: enabled
+    };
+    ctx->register_settings(ctx, keys, values, 2);
+  }
 }
 
-}  /* extern "C" */
+} /* extern "C" */

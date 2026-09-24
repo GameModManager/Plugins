@@ -51,27 +51,27 @@
 static const uint32_t STEAM_APPID = 250900;
 
 /* -- Isaac conflict-relevant file extensions -- */
-static const char* CONFLICT_EXTENSIONS = ".png,.anm2,.wav,.lua";
+static const char *CONFLICT_EXTENSIONS = ".png,.anm2,.wav,.lua";
 
 /* -- Files to ignore during conflict scanning -- */
-static const char* IGNORED_FILES = ".git,__pycache__,metadata.xml,disable.it,.DS_Store,"
+static const char *IGNORED_FILES = ".git,__pycache__,metadata.xml,disable.it,.DS_Store,"
                                    "Thumbs.db,desktop.ini,.Trashes,.Spotlight-V100,"
                                    "$RECYCLE.BIN,.directory,~";
 
 /* -- Workshop ID extraction pattern: folder names end with _<digits> -- */
-static const char* WORKSHOP_ID_PATTERN = "_(\\d+)$";
+static const char *WORKSHOP_ID_PATTERN = "_(\\d+)$";
 
 /* -- Disable mechanism filename -- */
-static const char* DISABLE_MECHANISM = "disable.it";
+static const char *DISABLE_MECHANISM = "disable.it";
 
 /* -- Metadata format: Isaac uses metadata.xml with <name> and <version> -- */
-static const char* METADATA_FILE        = "metadata.xml";
-static const char* METADATA_NAME_TAG    = "name";
-static const char* METADATA_VERSION_TAG = "version";
+static const char *METADATA_FILE        = "metadata.xml";
+static const char *METADATA_NAME_TAG    = "name";
+static const char *METADATA_VERSION_TAG = "version";
 
 /* -- Priority encoding: NNN prefix in <name> tag (e.g. "001 My Mod") -- */
-static const char* PRIORITY_PREFIX_RE = "^[^a-zA-Z]+";
-static const char* PRIORITY_FORMAT    = "%03d ";
+static const char *PRIORITY_PREFIX_RE = "^[^a-zA-Z]+";
+static const char *PRIORITY_FORMAT    = "%03d ";
 
 /* -- Auto-sort group definitions (name:priority) --
  * Lower priority number = loads
@@ -89,7 +89,7 @@ static const char* PRIORITY_FORMAT    = "%03d ";
  *   4. name    - matched against <name> in metadata.xml (least
  * reliable)
  */
-static const char* AUTO_SORT_GROUPS = "["
+static const char *AUTO_SORT_GROUPS = "["
                                       "{\"name\":\"framework\",\"priority\":0},"
                                       "{\"name\":\"libraries\",\"priority\":10},"
                                       "{\"name\":\"content\",\"priority\":20},"
@@ -102,7 +102,7 @@ static const char* AUTO_SORT_GROUPS = "["
                                       "]";
 
 /* -- Game versions: Isaac version string -> release date -- */
-static const char* GAME_VERSIONS = "{"
+static const char *GAME_VERSIONS = "{"
                                    "\"1.9.716\":\"2026-04-11\","
                                    "\"1.9.713\":\"2025-11-10\","
                                    "\"1.9.711\":\"2025-03-01\","
@@ -123,9 +123,9 @@ static const char* GAME_VERSIONS = "{"
  * the "Apply Sort Order"
  * feature can persist the intended priority.
  */
-static int isaac_order_encoding(const char* const* ordered_mod_ids, size_t count,
-                                const char* output_path, void* user_data) {
-  FILE* f = fopen(output_path, "w");
+static int isaac_order_encoding(const char *const *ordered_mod_ids, size_t count,
+                                const char *output_path, void *user_data) {
+  FILE *f = fopen(output_path, "w");
   if (!f)
     return 0;
 
@@ -186,7 +186,7 @@ static const int CAT_REMOVALS      = 1021;
  * to mods fetched from
  * the Workshop based on their declared tags.
  */
-static const char* WORKSHOP_TAG_CATEGORIES = "{"
+static const char *WORKSHOP_TAG_CATEGORIES = "{"
                                              "\"lua\":"
                                              "1006,"
                                              "\"items\":"
@@ -238,7 +238,7 @@ static const char* WORKSHOP_TAG_CATEGORIES = "{"
  * Registration entry point
  *
  * ========================================================================= */
-extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw) {
+extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *raw) {
   if (!raw)
     return;
 

@@ -35,17 +35,15 @@
 #include <system_error>
 #include <vector>
 
-namespace
-{
+namespace {
 
 // Portable strdup shim - std::strdup is POSIX, not C++; we link
 // everywhere we need it.
-char* str_dup(const char* s)
-{
+char *str_dup(const char *s) {
   if (!s)
     return nullptr;
   std::size_t n = std::strlen(s);
-  char* p       = static_cast<char*>(std::malloc(n + 1));
+  char *p       = static_cast<char *>(std::malloc(n + 1));
   if (!p)
     return nullptr;
   std::memcpy(p, s, n + 1);
@@ -54,8 +52,7 @@ char* str_dup(const char* s)
 
 // strdup with explicit empty->null mapping (the engine treats null and ""
 // the same when filling SaveGame, but we keep null to mean "absent").
-char* dup_opt(const std::string& s)
-{
+char *dup_opt(const std::string &s) {
   if (s.empty())
     return nullptr;
   return str_dup(s.c_str());
@@ -64,18 +61,17 @@ char* dup_opt(const std::string& s)
 // Always-non-null strdup: empty input -> empty allocation (the engine
 // handles both the same way but this avoids spurious nulls for
 // file_path/game_id which are never optional).
-char* dup_str(const std::string& s)
-{
+char *dup_str(const std::string &s) {
   return str_dup(s.empty() ? "" : s.c_str());
 }
 
 // Copy a string vector into the fixed-size C array in GmmSaveDataV2. The
 // engine caps at GMM_SAVE_MAX_PLUGINS, so excess entries are dropped
 // (256 already exceeds any real save; the cap is a defensive measure).
-void fill_plugin_array(const std::vector<std::string>& src, char** dst, uint32_t& count)
-{
+void fill_plugin_array(const std::vector<std::string> &src, char **dst,
+                       uint32_t &count) {
   count = 0;
-  for (const auto& s : src) {
+  for (const auto &s : src) {
     if (count >= GMM_SAVE_MAX_PLUGINS)
       break;
     dst[count++] = str_dup(s.c_str());
@@ -85,10 +81,9 @@ void fill_plugin_array(const std::vector<std::string>& src, char** dst, uint32_t
 // Translate the packet's SaveInfo into a freshly-allocated GmmSaveDataV2.
 // Caller takes ownership of every char* and the top-level struct (the
 // engine frees them after copying the strings into a SaveGame).
-GmmSaveDataV2* to_abi(const gmm::gamebryo::SaveInfo& info)
-{
-  GmmSaveDataV2* out =
-      static_cast<GmmSaveDataV2*>(std::calloc(1, sizeof(GmmSaveDataV2)));
+GmmSaveDataV2 *to_abi(const gmm::gamebryo::SaveInfo &info) {
+  GmmSaveDataV2 *out =
+      static_cast<GmmSaveDataV2 *>(std::calloc(1, sizeof(GmmSaveDataV2)));
   if (!out)
     return nullptr;
   out->file_path     = dup_str(info.file_path.string());
@@ -110,18 +105,18 @@ GmmSaveDataV2* to_abi(const gmm::gamebryo::SaveInfo& info)
   if (w > 0 && h > 0) {
     const size_t wh  = static_cast<size_t>(w) * h;
     const size_t src = info.screenshot.size();
-    uint8_t* rgba    = nullptr;
+    uint8_t *rgba    = nullptr;
     size_t bytes     = 0;
     if (src == wh * 4) {
       // Already RGBA (SE). Direct malloc + memcpy.
       bytes = wh * 4;
-      rgba  = static_cast<uint8_t*>(std::malloc(bytes));
+      rgba  = static_cast<uint8_t *>(std::malloc(bytes));
       if (rgba)
         std::memcpy(rgba, info.screenshot.data(), bytes);
     } else if (src == wh * 3) {
       // LE: RGB -> RGBA, opaque alpha. Single pass.
       bytes = wh * 4;
-      rgba  = static_cast<uint8_t*>(std::malloc(bytes));
+      rgba  = static_cast<uint8_t *>(std::malloc(bytes));
       if (rgba) {
         for (size_t i = 0; i < wh; ++i) {
           rgba[i * 4 + 0] = info.screenshot[i * 3 + 0];
@@ -158,11 +153,11 @@ GmmSaveDataV2* to_abi(const gmm::gamebryo::SaveInfo& info)
       files.push_back(co.string());
   }
   if (!files.empty()) {
-    char** arr = static_cast<char**>(std::malloc(sizeof(char*) * files.size()));
+    char **arr = static_cast<char **>(std::malloc(sizeof(char *) * files.size()));
     if (arr) {
       uint32_t kept = 0;
-      for (const auto& s : files) {
-        if (char* d = str_dup(s.c_str()))
+      for (const auto &s : files) {
+        if (char *d = str_dup(s.c_str()))
           arr[kept++] = d;
       }
       if (kept > 0) {
@@ -177,15 +172,14 @@ GmmSaveDataV2* to_abi(const gmm::gamebryo::SaveInfo& info)
   return out;
 }
 
-int parse_with(gmm::gamebryo::SaveInfo (*factory)(const char* path,
-                                                  const char* game_id),
-               const char* path, const char* game_id, GmmSaveDataV2* out)
-{
+int parse_with(gmm::gamebryo::SaveInfo (*factory)(const char *path,
+                                                  const char *game_id),
+               const char *path, const char *game_id, GmmSaveDataV2 *out) {
   if (!path || !game_id || !out)
     return 0;
   try {
     auto info             = factory(path, game_id);
-    GmmSaveDataV2* filled = to_abi(info);
+    GmmSaveDataV2 *filled = to_abi(info);
     if (!filled)
       return 0;
     *out = *filled;
@@ -199,14 +193,12 @@ int parse_with(gmm::gamebryo::SaveInfo (*factory)(const char* path,
   }
 }
 
-gmm::gamebryo::SaveInfo make_skyrim_le(const char* path, const char* game_id)
-{
+gmm::gamebryo::SaveInfo make_skyrim_le(const char *path, const char *game_id) {
   gmm::gamebryo::SkyrimSaveGame s(path, game_id);
   return s.parse();
 }
 
-gmm::gamebryo::SaveInfo make_skyrim_se(const char* path, const char* game_id)
-{
+gmm::gamebryo::SaveInfo make_skyrim_se(const char *path, const char *game_id) {
   gmm::gamebryo::SkyrimSESaveGame s(path, game_id);
   return s.parse();
 }
@@ -216,8 +208,8 @@ gmm::gamebryo::SaveInfo make_skyrim_se(const char* path, const char* game_id)
 // owns the malloc'd struct + strings after we return. Adds a few summary
 // rows beyond the default metadata the engine already shows
 // (name/level/location).
-GmmSaveOverlayV2* build_skyrimse_overlay(const GmmSaveDataV2* save, void* /*user_data*/)
-{
+GmmSaveOverlayV2 *build_skyrimse_overlay(const GmmSaveDataV2 *save,
+                                         void * /*user_data*/) {
   if (!save)
     return nullptr;
   // Build kv rows: save number, plugin count, light plugin count.
@@ -227,18 +219,18 @@ GmmSaveOverlayV2* build_skyrimse_overlay(const GmmSaveDataV2* save, void* /*user
   std::snprintf(pc, sizeof(pc), "%u", save->plugin_count);
   char lpc[32];
   std::snprintf(lpc, sizeof(lpc), "%u", save->light_plugin_count);
-  const char* keys[3]   = {"Save #", "Plugins", "Light plugins"};
-  const char* values[3] = {num, pc, lpc};
+  const char *keys[3]   = {"Save #", "Plugins", "Light plugins"};
+  const char *values[3] = {num, pc, lpc};
 
-  GmmSaveOverlayV2* ov =
-      static_cast<GmmSaveOverlayV2*>(std::calloc(1, sizeof(GmmSaveOverlayV2)));
+  GmmSaveOverlayV2 *ov =
+      static_cast<GmmSaveOverlayV2 *>(std::calloc(1, sizeof(GmmSaveOverlayV2)));
   if (!ov)
     return nullptr;
   ov->title = str_dup("Save details");
   if (save->pc_name)
     ov->subtitle = str_dup(save->pc_name);
-  ov->kv_keys   = static_cast<char**>(std::malloc(sizeof(char*) * 3));
-  ov->kv_values = static_cast<char**>(std::malloc(sizeof(char*) * 3));
+  ov->kv_keys   = static_cast<char **>(std::malloc(sizeof(char *) * 3));
+  ov->kv_values = static_cast<char **>(std::malloc(sizeof(char *) * 3));
   if (!ov->kv_keys || !ov->kv_values) {
     std::free(ov->kv_keys);
     std::free(ov->kv_values);
@@ -257,27 +249,23 @@ GmmSaveOverlayV2* build_skyrimse_overlay(const GmmSaveDataV2* save, void* /*user
 
 }  // namespace
 
-extern "C" int skyrim_save_parser(const char* path, const char* game_id,
-                                  GmmSaveDataV2* out, void* /*user_data*/)
-{
+extern "C" int skyrim_save_parser(const char *path, const char *game_id,
+                                  GmmSaveDataV2 *out, void * /*user_data*/) {
   return parse_with(&make_skyrim_le, path, game_id, out);
 }
 
-extern "C" int skyrimse_save_parser(const char* path, const char* game_id,
-                                    GmmSaveDataV2* out, void* /*user_data*/)
-{
+extern "C" int skyrimse_save_parser(const char *path, const char *game_id,
+                                    GmmSaveDataV2 *out, void * /*user_data*/) {
   return parse_with(&make_skyrim_se, path, game_id, out);
 }
 
-extern "C" int skyrimvr_save_parser(const char* path, const char* game_id,
-                                    GmmSaveDataV2* out, void* /*user_data*/)
-{
+extern "C" int skyrimvr_save_parser(const char *path, const char *game_id,
+                                    GmmSaveDataV2 *out, void * /*user_data*/) {
   // VR uses the same SE save format (MO2: SkyrimSESaveGame).
   return parse_with(&make_skyrim_se, path, game_id, out);
 }
 
-extern "C" GmmSaveOverlayV2* skyrimse_save_overlay(const GmmSaveDataV2* save,
-                                                   void* user_data)
-{
+extern "C" GmmSaveOverlayV2 *skyrimse_save_overlay(const GmmSaveDataV2 *save,
+                                                   void *user_data) {
   return build_skyrimse_overlay(save, user_data);
 }

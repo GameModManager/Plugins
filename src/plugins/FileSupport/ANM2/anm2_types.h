@@ -20,14 +20,7 @@
  *
  * ------------------------------------------------------------------------ */
 
-enum class Interpolation
-{
-  NONE,
-  LINEAR,
-  EASE_IN,
-  EASE_OUT,
-  EASE_IN_OUT
-};
+enum class Interpolation { NONE, LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT };
 
 /* --------------------------------------------------------------------------
  * Data
@@ -35,22 +28,19 @@ enum class Interpolation
  *
  * ------------------------------------------------------------------------ */
 
-struct Spritesheet
-{
+struct Spritesheet {
   int id = -1;
   QString path;    // relative path from game resources dir
   QPixmap pixmap;  // loaded PNG
 };
 
-struct LayerDef
-{
+struct LayerDef {
   int id = -1;
   QString name;
   int spritesheet_id = -1;
 };
 
-struct Anm2Frame
-{
+struct Anm2Frame {
   int x_position              = 0;
   int y_position              = 0;
   int x_pivot                 = 0;
@@ -74,15 +64,13 @@ struct Anm2Frame
   Interpolation interpolation = Interpolation::LINEAR;
 };
 
-struct LayerAnimation
-{
+struct LayerAnimation {
   int layer_id = -1;
   bool visible = true;
   QList<Anm2Frame> frames;
 };
 
-struct Animation
-{
+struct Animation {
   QString name;
   int frame_num = 0;
   bool loop     = true;
