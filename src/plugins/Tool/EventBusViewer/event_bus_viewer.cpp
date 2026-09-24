@@ -58,15 +58,13 @@ void event_bus_viewer_invoke(void *user_data) {
 
   for (int i = 0; i < table->rowCount(); ++i) {
     const engine::EventRecord &e = events[i];
-    const qint64 ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          e.timestamp.time_since_epoch())
-                          .count();
+    const qint64 ms    = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             e.timestamp.time_since_epoch())
+                             .count();
     const QDateTime dt = QDateTime::fromMSecsSinceEpoch(ms);
 
-    table->setItem(i, 0,
-                   new QTableWidgetItem(QString::fromStdString(e.event_id)));
-    table->setItem(i, 1,
-                   new QTableWidgetItem(QString::fromStdString(e.payload)));
+    table->setItem(i, 0, new QTableWidgetItem(QString::fromStdString(e.event_id)));
+    table->setItem(i, 1, new QTableWidgetItem(QString::fromStdString(e.payload)));
     table->setItem(i, 2, new QTableWidgetItem(dt.toString(Qt::ISODateWithMs)));
   }
   table->resizeColumnsToContents();
@@ -80,20 +78,22 @@ void event_bus_viewer_invoke(void *user_data) {
   dlg.exec();
 }
 
-} // namespace
+}  // namespace
 
 extern "C" {
 
-uint32_t gmm_abi_version() { return GMM_ABI_VERSION; }
+uint32_t gmm_abi_version() {
+  return GMM_ABI_VERSION;
+}
 
 void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
   if (!ctx)
     return;
 
   GmmPluginInfo info{};
-  info.name = "Event Bus Viewer";
-  info.author = "GMM";
-  info.version = "1.0";
+  info.name        = "Event Bus Viewer";
+  info.author      = "GMM";
+  info.version     = "1.0";
   info.description = "View event bus activity";
 
   if (ctx->register_plugin)
@@ -105,4 +105,4 @@ void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
   }
 }
 
-} // extern "C"
+}  // extern "C"

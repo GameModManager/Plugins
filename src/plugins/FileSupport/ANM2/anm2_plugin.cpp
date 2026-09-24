@@ -36,13 +36,11 @@
  *
  * ------------------------------------------------------------------------ */
 
-class Anm2PreviewWidget : public QWidget
-{
+class Anm2PreviewWidget : public QWidget {
 public:
-  explicit Anm2PreviewWidget(const QString& path, QWidget* parent = nullptr)
-      : QWidget(parent), step_(0), total_steps_(0)
-  {
-    auto* lay = new QVBoxLayout(this);
+  explicit Anm2PreviewWidget(const QString &path, QWidget *parent = nullptr)
+      : QWidget(parent), step_(0), total_steps_(0) {
+    auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(0, 0, 0, 0);
 
     info_label_ = new QLabel(this);
@@ -67,7 +65,7 @@ public:
     anm2_load_spritesheets(path, spritesheets);
 
     /* Build spritesheet lookup by id */
-    for (const auto& ss : spritesheets)
+    for (const auto &ss : spritesheets)
       sheet_by_id_[ss.id] = ss.pixmap;
 
     layer_defs_ = layer_defs;
@@ -102,8 +100,7 @@ public:
 
 private:
   /* Render a frame at the given time using on-demand interpolation */
-  void renderTime(float time)
-  {
+  void renderTime(float time) {
     if (!has_data_)
       return;
 
@@ -112,17 +109,16 @@ private:
     label_->setPixmap(QPixmap::fromImage(canvas));
   }
 
-  void nextFrame()
-  {
+  void nextFrame() {
     step_ = (step_ + 1) % total_steps_;
     renderTime(static_cast<float>(step_));
     timer_->start(frame_interval_ms_);
   }
 
   /* UI */
-  QLabel* info_label_ = nullptr;
-  QLabel* label_      = nullptr;
-  QTimer* timer_      = nullptr;
+  QLabel *info_label_ = nullptr;
+  QLabel *label_      = nullptr;
+  QTimer *timer_      = nullptr;
 
   /* Animation data */
   bool has_data_ = false;
@@ -144,8 +140,7 @@ private:
  * ------------------------------------------------------------------------
  */
 
-static void* anm2_preview(const char* path, void*, void*)
-{
+static void *anm2_preview(const char *path, void *, void *) {
   if (!path)
     return nullptr;
   return new Anm2PreviewWidget(QString::fromUtf8(path));
@@ -157,9 +152,8 @@ static void* anm2_preview(const char* path, void*, void*)
  *
  * ------------------------------------------------------------------------ */
 
-static int anm2_parse(const char* file_path_c, const char* base_dir_c,
-                      GmmAnimationDataV2* out, void*)
-{
+static int anm2_parse(const char *file_path_c, const char *base_dir_c,
+                      GmmAnimationDataV2 *out, void *) {
   if (!file_path_c || !out)
     return 0;
 
@@ -180,7 +174,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
 
   /* Build spritesheet lookup by id */
   std::map<int, QPixmap> sheet_by_id;
-  for (const auto& ss : spritesheets)
+  for (const auto &ss : spritesheets)
     sheet_by_id[ss.id] = ss.pixmap;
 
   /* Read FPS */
@@ -191,16 +185,16 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
 
   /* Pre-bake the first frame as fallback for backward compat */
   int total                       = anm2_compute_total_frames(anim);
-  GmmAnimationFrameV2* def_frames = nullptr;
+  GmmAnimationFrameV2 *def_frames = nullptr;
   size_t def_count                = 0;
 
   if (total > 0) {
-    def_frames = static_cast<GmmAnimationFrameV2*>(
+    def_frames = static_cast<GmmAnimationFrameV2 *>(
         calloc(static_cast<size_t>(total), sizeof(GmmAnimationFrameV2)));
     if (def_frames) {
       def_count = static_cast<size_t>(total);
       for (int step = 0; step < total; ++step) {
-        GmmAnimationFrameV2& cf = def_frames[step];
+        GmmAnimationFrameV2 &cf = def_frames[step];
         cf.delay_ms             = 1000.0f / static_cast<float>(fps);
 
         QImage canvas = anm2_render_frame_at_time(
@@ -209,7 +203,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
 
         cf.layer_count = 1;
         cf.layers =
-            static_cast<GmmAnimationLayerV2*>(calloc(1, sizeof(GmmAnimationLayerV2)));
+            static_cast<GmmAnimationLayerV2 *>(calloc(1, sizeof(GmmAnimationLayerV2)));
         if (!cf.layers) {
           for (size_t j = 0; j < static_cast<size_t>(step); ++j) {
             for (size_t k = 0; k < def_frames[j].layer_count; ++k)
@@ -228,7 +222,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
         cf.layers[0].height      = rgba.height();
         cf.layers[0].pixel_count = static_cast<size_t>(rgba.sizeInBytes());
         cf.layers[0].rgba_pixels =
-            static_cast<uint8_t*>(malloc(cf.layers[0].pixel_count));
+            static_cast<uint8_t *>(malloc(cf.layers[0].pixel_count));
         if (cf.layers[0].rgba_pixels)
           memcpy(cf.layers[0].rgba_pixels, rgba.constBits(), cf.layers[0].pixel_count);
       }
@@ -250,7 +244,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
    * animation data for on-demand rendering
    *
    * --------------------------------------------------------------- */
-  auto* raw          = new Anm2RawData();
+  auto *raw          = new Anm2RawData();
   raw->anim          = anim;
   raw->spritesheets  = spritesheets;
   raw->layer_defs    = layer_defs;
@@ -268,15 +262,15 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
    * --------------------------------------------------------------- */
   if (all_anims.size() > 1) {
     out->state_count = static_cast<size_t>(all_anims.size());
-    out->states      = static_cast<GmmAnimationStateV2*>(
+    out->states      = static_cast<GmmAnimationStateV2 *>(
         calloc(out->state_count, sizeof(GmmAnimationStateV2)));
     if (out->states) {
       for (int si = 0; si < all_anims.size(); ++si) {
-        GmmAnimationStateV2& st = out->states[si];
-        const Animation& a      = all_anims[si];
+        GmmAnimationStateV2 &st = out->states[si];
+        const Animation &a      = all_anims[si];
 
         QByteArray name_bytes = a.name.toUtf8();
-        st.name               = static_cast<char*>(malloc(name_bytes.size() + 1));
+        st.name               = static_cast<char *>(malloc(name_bytes.size() + 1));
         if (st.name) {
           memcpy(st.name, name_bytes.constData(), name_bytes.size());
           st.name[name_bytes.size()] = '\0';
@@ -288,11 +282,11 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
 
         int state_total = anm2_compute_total_frames(a);
         st.frame_count  = static_cast<size_t>(state_total);
-        st.frames       = static_cast<GmmAnimationFrameV2*>(
+        st.frames       = static_cast<GmmAnimationFrameV2 *>(
             calloc(st.frame_count, sizeof(GmmAnimationFrameV2)));
         if (st.frames) {
           for (int step = 0; step < state_total; ++step) {
-            GmmAnimationFrameV2& cf = st.frames[step];
+            GmmAnimationFrameV2 &cf = st.frames[step];
             cf.delay_ms             = 1000.0f / static_cast<float>(fps);
 
             QImage canvas = anm2_render_frame_at_time(a, layer_defs, sheet_by_id,
@@ -300,7 +294,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
             QImage rgba   = canvas.convertToFormat(QImage::Format_RGBA8888);
 
             cf.layer_count = 1;
-            cf.layers      = static_cast<GmmAnimationLayerV2*>(
+            cf.layers      = static_cast<GmmAnimationLayerV2 *>(
                 calloc(1, sizeof(GmmAnimationLayerV2)));
             if (cf.layers) {
               cf.layers[0].x           = 0;
@@ -309,7 +303,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
               cf.layers[0].height      = rgba.height();
               cf.layers[0].pixel_count = static_cast<size_t>(rgba.sizeInBytes());
               cf.layers[0].rgba_pixels =
-                  static_cast<uint8_t*>(malloc(cf.layers[0].pixel_count));
+                  static_cast<uint8_t *>(malloc(cf.layers[0].pixel_count));
               if (cf.layers[0].rgba_pixels)
                 memcpy(cf.layers[0].rgba_pixels, rgba.constBits(),
                        cf.layers[0].pixel_count);
@@ -318,7 +312,7 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
         }
 
         /* Per-state raw data for on-demand rendering */
-        auto* state_raw          = new Anm2RawData();
+        auto *state_raw          = new Anm2RawData();
         state_raw->anim          = a;
         state_raw->spritesheets  = spritesheets;
         state_raw->layer_defs    = layer_defs;
@@ -343,37 +337,34 @@ static int anm2_parse(const char* file_path_c, const char* base_dir_c,
  * Entry
  * point
  * ------------------------------------------------------------------------ */
-extern "C"
-{
+extern "C" {
 
-  uint32_t gmm_abi_version()
-  {
-    return GMM_ABI_VERSION;
+uint32_t gmm_abi_version() {
+  return GMM_ABI_VERSION;
+}
+
+void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
+  if (!ctx)
+    return;
+
+  ctx->register_plugin(ctx, {.name        = "ANM2",
+                             .author      = "GameModManager Team",
+                             .version     = "2.0.0",
+                             .description = "ANM2 animation file preview and parser "
+                                            "(The Binding of Isaac: Rebirth)"});
+
+  if (ctx->register_category)
+    ctx->register_category(ctx, "File Support");
+
+  anm2_set_resolve_file(reinterpret_cast<void *>(ctx->resolve_file));
+
+  if (ctx->register_preview) {
+    ctx->register_preview(ctx, ".anm2", nullptr, anm2_preview, nullptr);
   }
 
-  void gmm_register_v2(GmmRegistrationCtxV2* ctx)
-  {
-    if (!ctx)
-      return;
-
-    ctx->register_plugin(ctx, {.name        = "ANM2",
-                               .author      = "GameModManager Team",
-                               .version     = "2.0.0",
-                               .description = "ANM2 animation file preview and parser "
-                                              "(The Binding of Isaac: Rebirth)"});
-
-    if (ctx->register_category)
-      ctx->register_category(ctx, "File Support");
-
-    anm2_set_resolve_file(reinterpret_cast<void*>(ctx->resolve_file));
-
-    if (ctx->register_preview) {
-      ctx->register_preview(ctx, ".anm2", nullptr, anm2_preview, nullptr);
-    }
-
-    if (ctx->register_animation_parser) {
-      ctx->register_animation_parser(ctx, nullptr, ".anm2", anm2_parse, 10, nullptr);
-    }
+  if (ctx->register_animation_parser) {
+    ctx->register_animation_parser(ctx, nullptr, ".anm2", anm2_parse, 10, nullptr);
   }
+}
 
 } /* extern "C" */

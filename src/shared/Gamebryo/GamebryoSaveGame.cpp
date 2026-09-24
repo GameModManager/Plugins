@@ -2,11 +2,9 @@
 
 #include <filesystem>
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
-namespace
-{
+namespace {
 
   // 100ns ticks between 1601-01-01 (FILETIME epoch) and 1970-01-01 (Unix epoch).
   constexpr std::uint64_t kFiletimeToUnixEpoch = 116444736000000000ULL;
@@ -14,18 +12,16 @@ namespace
 
 }  // namespace
 
-GamebryoSaveGame::GamebryoSaveGame(const std::filesystem::path& path,
+GamebryoSaveGame::GamebryoSaveGame(const std::filesystem::path &path,
                                    std::string game_id,
-                                   const std::string& expected_magic)
-    : reader_(path, expected_magic), game_id_(std::move(game_id))
-{
+                                   const std::string &expected_magic)
+    : reader_(path, expected_magic), game_id_(std::move(game_id)) {
   data_.file_path = path;
   data_.game_id   = game_id_;
 }
 
-std::uint32_t GamebryoSaveGame::fetch_information_fields()
-{
-  auto& r = reader_;
+std::uint32_t GamebryoSaveGame::fetch_information_fields() {
+  auto &r = reader_;
   r.skip(4);  // header size (does NOT bound the strings; MO2 ignores it)
   std::uint32_t version = r.u32();
   header_version_       = version;
@@ -42,8 +38,7 @@ std::uint32_t GamebryoSaveGame::fetch_information_fields()
   return version;
 }
 
-SaveInfo GamebryoSaveGame::parse()
-{
+SaveInfo GamebryoSaveGame::parse() {
   fetch_information_fields();
   fetch_data_fields();
   // game_id may have been overwritten by the subclass (e.g. "skyrimse"
@@ -53,8 +48,7 @@ SaveInfo GamebryoSaveGame::parse()
   return data_;
 }
 
-bool GamebryoSaveGame::has_script_extender_file() const
-{
+bool GamebryoSaveGame::has_script_extender_file() const {
   if (!data_.file_path.has_extension()) {
     return false;
   }
@@ -64,8 +58,7 @@ bool GamebryoSaveGame::has_script_extender_file() const
   return std::filesystem::exists(co, ec);
 }
 
-std::vector<std::string> read_plugin_list(GamebryoSaveReader& r, std::size_t count)
-{
+std::vector<std::string> read_plugin_list(GamebryoSaveReader &r, std::size_t count) {
   std::vector<std::string> out;
   out.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
@@ -74,8 +67,7 @@ std::vector<std::string> read_plugin_list(GamebryoSaveReader& r, std::size_t cou
   return out;
 }
 
-std::int64_t filetime_to_epoch(std::uint64_t filetime_100ns)
-{
+std::int64_t filetime_to_epoch(std::uint64_t filetime_100ns) {
   if (filetime_100ns < kFiletimeToUnixEpoch) {
     return 0;
   }

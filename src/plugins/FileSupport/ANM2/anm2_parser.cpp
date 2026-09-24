@@ -27,8 +27,7 @@
 
 static GmmResolveFileFn g_resolve_file = nullptr;
 
-void anm2_set_resolve_file(void* resolve_file)
-{
+void anm2_set_resolve_file(void *resolve_file) {
   g_resolve_file = reinterpret_cast<GmmResolveFileFn>(resolve_file);
 }
 
@@ -38,8 +37,7 @@ void anm2_set_resolve_file(void* resolve_file)
  *
  * ------------------------------------------------------------------------ */
 
-static Interpolation parseInterpolation(const QString& str)
-{
+static Interpolation parseInterpolation(const QString &str) {
   if (str.isEmpty() || str == "False" || str == "false")
     return Interpolation::NONE;
   if (str == "True" || str == "true" || str == "Linear")
@@ -59,8 +57,7 @@ static Interpolation parseInterpolation(const QString& str)
  *
  * ------------------------------------------------------------------------ */
 
-static Anm2Frame parseFrame(QXmlStreamReader& xml)
-{
+static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   Anm2Frame f;
   auto attrs   = xml.attributes();
   f.x_position = attrs.value("XPosition").toInt();
@@ -107,10 +104,9 @@ static Anm2Frame parseFrame(QXmlStreamReader& xml)
  *
  * ------------------------------------------------------------------------ */
 
-bool anm2_parse_file(const QString& path, Animation& anim,
-                     QList<Spritesheet>& spritesheets, QList<LayerDef>& layer_defs,
-                     QList<Animation>* all_anims)
-{
+bool anm2_parse_file(const QString &path, Animation &anim,
+                     QList<Spritesheet> &spritesheets, QList<LayerDef> &layer_defs,
+                     QList<Animation> *all_anims) {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
     return false;
@@ -223,8 +219,7 @@ bool anm2_parse_file(const QString& path, Animation& anim,
  * reader
  * ------------------------------------------------------------------------ */
 
-int anm2_read_fps(const QString& path)
-{
+int anm2_read_fps(const QString &path) {
   QFile f(path);
   if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
     return 18;
@@ -245,8 +240,7 @@ int anm2_read_fps(const QString& path)
  *
  * ------------------------------------------------------------------------ */
 
-static QStringList buildBaseDirs(const QString& base_dir)
-{
+static QStringList buildBaseDirs(const QString &base_dir) {
   QStringList dirs;
   dirs << base_dir;
   QDir walk(base_dir);
@@ -264,21 +258,20 @@ static QStringList buildBaseDirs(const QString& base_dir)
   return dirs;
 }
 
-void anm2_load_spritesheets_from_dir(const QString& base_dir,
-                                     QList<Spritesheet>& spritesheets)
-{
+void anm2_load_spritesheets_from_dir(const QString &base_dir,
+                                     QList<Spritesheet> &spritesheets) {
   QStringList base_dirs = buildBaseDirs(base_dir);
 
-  for (auto& ss : spritesheets) {
+  for (auto &ss : spritesheets) {
     QString rel = ss.path;
     rel.replace('\\', '/');
     bool loaded = false;
 
     if (g_resolve_file) {
-      for (const auto& base : base_dirs) {
+      for (const auto &base : base_dirs) {
         QByteArray root_bytes = base.toUtf8();
         QByteArray rel_bytes  = rel.toUtf8();
-        char* resolved =
+        char *resolved =
             g_resolve_file(root_bytes.constData(), rel_bytes.constData(), nullptr);
         if (resolved) {
           QString path = QString::fromUtf8(resolved);
@@ -292,7 +285,7 @@ void anm2_load_spritesheets_from_dir(const QString& base_dir,
     }
 
     if (!loaded) {
-      for (const auto& base : base_dirs) {
+      for (const auto &base : base_dirs) {
         QString full = QDir(base).absoluteFilePath(rel);
         if (ss.pixmap.load(full)) {
           loaded = true;
@@ -303,8 +296,8 @@ void anm2_load_spritesheets_from_dir(const QString& base_dir,
   }
 }
 
-void anm2_load_spritesheets(const QString& anm2_path, QList<Spritesheet>& spritesheets)
-{
+void anm2_load_spritesheets(const QString &anm2_path,
+                            QList<Spritesheet> &spritesheets) {
   anm2_load_spritesheets_from_dir(QFileInfo(anm2_path).absoluteDir().absolutePath(),
                                   spritesheets);
 }

@@ -1,16 +1,13 @@
 #include "SkyrimSESaveGame.h"
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
-SkyrimSESaveGame::SkyrimSESaveGame(const std::filesystem::path& path,
+SkyrimSESaveGame::SkyrimSESaveGame(const std::filesystem::path &path,
                                    std::string game_id)
-    : GamebryoSaveGame(path, std::move(game_id), "TESV_SAVEGAME")
-{}
+    : GamebryoSaveGame(path, std::move(game_id), "TESV_SAVEGAME") {}
 
-void SkyrimSESaveGame::fetch_data_fields()
-{
-  auto& r = reader();
+void SkyrimSESaveGame::fetch_data_fields() {
+  auto &r = reader();
 
   std::uint32_t w = r.u32();
   std::uint32_t h = r.u32();

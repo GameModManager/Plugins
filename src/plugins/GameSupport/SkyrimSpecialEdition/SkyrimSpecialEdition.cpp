@@ -25,10 +25,9 @@
 static const uint32_t SKYRIM_SE_APPID = 489830;
 
 /* -- Order encoding: writes plugins.txt -- */
-static int skyrim_order_encoding(const char* const* ordered_mod_ids, size_t count,
-                                 const char* output_path, void* user_data)
-{
-  FILE* f = fopen(output_path, "w");
+static int skyrim_order_encoding(const char *const *ordered_mod_ids, size_t count,
+                                 const char *output_path, void *user_data) {
+  FILE *f = fopen(output_path, "w");
   if (!f)
     return 0;
 
@@ -41,8 +40,7 @@ static int skyrim_order_encoding(const char* const* ordered_mod_ids, size_t coun
 }
 
 /* -- Registration entry point -- */
-extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
-{
+extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *raw) {
   if (!raw)
     return;
 
@@ -125,8 +123,7 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2* raw)
 }
 
 /* -- Version guard -- */
-extern "C" uint32_t gmm_abi_version(void)
-{
+extern "C" uint32_t gmm_abi_version(void) {
   return GMM_ABI_VERSION;
 }
 
@@ -137,8 +134,7 @@ extern "C" uint32_t gmm_abi_version(void)
  * GMM_FEATURE_*). Set ONLY the bits we really fill; missing bits = the
  * engine treats those fields as absent, matching pre-v2.1 behavior.
  */
-extern "C" uint64_t gmm_abi_features(void)
-{
+extern "C" uint64_t gmm_abi_features(void) {
   // Bit numbers mirror GMM_FEATURE_* in Core's plugin_loader.h:
   //   SAVE_SCREENSHOT=0, SAVE_ALL_FILES=1, SAVE_MEDIUM=2,
   //   SAVE_OVERLAY=3, GAME_VARIANTS=4.

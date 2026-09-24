@@ -8,29 +8,24 @@
 #include <cstdio>
 #include <cstring>
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
-namespace
-{
+namespace {
 
-  [[noreturn]] void throw_eof()
-  {
+  [[noreturn]] void throw_eof() {
     throw SaveParseError("unexpected end of file");
   }
 
-  std::uint16_t rd16(const std::vector<std::uint8_t>& b, std::size_t at)
-  {
+  std::uint16_t rd16(const std::vector<std::uint8_t> &b, std::size_t at) {
     return static_cast<std::uint16_t>(b[at]) |
            (static_cast<std::uint16_t>(b[at + 1]) << 8);
   }
 
 }  // namespace
 
-GamebryoSaveReader::GamebryoSaveReader(const std::filesystem::path& path,
-                                       const std::string& expected_magic)
-{
-  FILE* f = std::fopen(path.string().c_str(), "rb");
+GamebryoSaveReader::GamebryoSaveReader(const std::filesystem::path &path,
+                                       const std::string &expected_magic) {
+  FILE *f = std::fopen(path.string().c_str(), "rb");
   if (!f) {
     throw SaveParseError("failed to open " + path.string());
   }
@@ -57,16 +52,14 @@ GamebryoSaveReader::GamebryoSaveReader(const std::filesystem::path& path,
   pos_ = expected_magic.size();
 }
 
-std::uint8_t GamebryoSaveReader::u8()
-{
+std::uint8_t GamebryoSaveReader::u8() {
   if (pos_ + 1 > buf_.size()) {
     throw_eof();
   }
   return buf_[pos_++];
 }
 
-std::uint16_t GamebryoSaveReader::u16()
-{
+std::uint16_t GamebryoSaveReader::u16() {
   if (pos_ + 2 > buf_.size()) {
     throw_eof();
   }
@@ -75,8 +68,7 @@ std::uint16_t GamebryoSaveReader::u16()
   return v;
 }
 
-std::uint32_t GamebryoSaveReader::u32()
-{
+std::uint32_t GamebryoSaveReader::u32() {
   if (pos_ + 4 > buf_.size()) {
     throw_eof();
   }
@@ -88,41 +80,36 @@ std::uint32_t GamebryoSaveReader::u32()
   return v;
 }
 
-std::uint64_t GamebryoSaveReader::u64()
-{
+std::uint64_t GamebryoSaveReader::u64() {
   std::uint64_t lo = u32();
   std::uint64_t hi = u32();
   return lo | (hi << 32);
 }
 
-float GamebryoSaveReader::f32()
-{
+float GamebryoSaveReader::f32() {
   std::uint32_t bits = u32();
   float v;
   std::memcpy(&v, &bits, sizeof(v));
   return v;
 }
 
-void GamebryoSaveReader::skip(std::size_t count)
-{
+void GamebryoSaveReader::skip(std::size_t count) {
   if (pos_ + count > buf_.size()) {
     throw_eof();
   }
   pos_ += count;
 }
 
-std::string GamebryoSaveReader::read_bytes(std::size_t count)
-{
+std::string GamebryoSaveReader::read_bytes(std::size_t count) {
   if (pos_ + count > buf_.size()) {
     throw_eof();
   }
-  std::string out(reinterpret_cast<const char*>(buf_.data() + pos_), count);
+  std::string out(reinterpret_cast<const char *>(buf_.data() + pos_), count);
   pos_ += count;
   return out;
 }
 
-std::string GamebryoSaveReader::wstring()
-{
+std::string GamebryoSaveReader::wstring() {
   std::uint16_t len = u16();
   std::string bytes = read_bytes(len);
   // UTF-8 decode (validating): real header strings are single-byte ASCII;
@@ -163,8 +150,7 @@ std::string GamebryoSaveReader::wstring()
   return out;
 }
 
-void GamebryoSaveReader::begin_compressed(std::uint16_t type)
-{
+void GamebryoSaveReader::begin_compressed(std::uint16_t type) {
   if (type == 0) {
     // Uncompressed data region: keep reading from the file cursor.
     return;
@@ -194,8 +180,7 @@ void GamebryoSaveReader::begin_compressed(std::uint16_t type)
 std::vector<std::uint8_t>
 GamebryoSaveReader::inflate_chunks(std::uint64_t start,
                                    std::uint64_t total_uncompressed,
-                                   const std::vector<std::uint8_t>& file)
-{
+                                   const std::vector<std::uint8_t> &file) {
   constexpr std::size_t kChunk   = 16384;
   constexpr std::uint64_t kAlign = 16;
 
@@ -256,11 +241,10 @@ GamebryoSaveReader::inflate_chunks(std::uint64_t start,
 }
 
 std::vector<std::uint8_t>
-GamebryoSaveReader::lz4_decompress(const std::string& compressed,
-                                   std::uint32_t uncompressed_size)
-{
+GamebryoSaveReader::lz4_decompress(const std::string &compressed,
+                                   std::uint32_t uncompressed_size) {
   std::vector<std::uint8_t> out(uncompressed_size);
-  int n = LZ4_decompress_safe(compressed.data(), reinterpret_cast<char*>(out.data()),
+  int n = LZ4_decompress_safe(compressed.data(), reinterpret_cast<char *>(out.data()),
                               static_cast<int>(compressed.size()),
                               static_cast<int>(uncompressed_size));
   if (n < 0 || static_cast<std::uint32_t>(n) != uncompressed_size) {

@@ -34,14 +34,12 @@
 
 #include "GamebryoSaveReader.h"
 
-namespace gmm::gamebryo
-{
+namespace gmm::gamebryo {
 
 // One parsed Gamebryo save. Same shape as the old engine::SaveGame
 // (header + data region) but lives in the packet so the per-game
 // subclasses can write into it without the engine dependency.
-struct SaveInfo
-{
+struct SaveInfo {
   std::filesystem::path file_path;
   std::string game_id;  // "skyrim" | "skyrimse" | "skyrimvr" | "fallout4" ...
 
@@ -65,19 +63,18 @@ struct SaveInfo
   int screenshot_height = 0;
 };
 
-class GamebryoSaveGame
-{
+class GamebryoSaveGame {
 public:
   // Opens `path` and verifies the magic. The per-game subclass passes the
   // expected magic ("TESV_SAVEGAME" for Skyrim-family). The parser state
   // lives in the subclass because LE vs SE diverge on the data region.
-  GamebryoSaveGame(const std::filesystem::path& path, std::string game_id,
-                   const std::string& expected_magic);
+  GamebryoSaveGame(const std::filesystem::path &path, std::string game_id,
+                   const std::string &expected_magic);
   virtual ~GamebryoSaveGame() = default;
 
   // Disable copy: holds a reader cursor.
-  GamebryoSaveGame(const GamebryoSaveGame&)            = delete;
-  GamebryoSaveGame& operator=(const GamebryoSaveGame&) = delete;
+  GamebryoSaveGame(const GamebryoSaveGame &)            = delete;
+  GamebryoSaveGame &operator=(const GamebryoSaveGame &) = delete;
 
   // Reads the shared LE/SE header (everything up to and including the
   // FILETIME). Returns the save header version so subclasses can branch on
@@ -94,9 +91,9 @@ public:
   SaveInfo parse();
 
   // The reader (subclasses need it; the adapter does not).
-  [[nodiscard]] GamebryoSaveReader& reader() { return reader_; }
-  [[nodiscard]] const SaveInfo& data() const { return data_; }
-  [[nodiscard]] SaveInfo& data() { return data_; }
+  [[nodiscard]] GamebryoSaveReader &reader() { return reader_; }
+  [[nodiscard]] const SaveInfo &data() const { return data_; }
+  [[nodiscard]] SaveInfo &data() { return data_; }
 
   // Override the script-extender extension (default "skse"). FO4 would
   // override to return "f4se" without duplicating the rest.
@@ -121,7 +118,7 @@ private:
 
 // Reads `count` u16-length strings (MO2 readPluginData). Used by the
 // decompressed plugin-list and the SE light-plugins list.
-[[nodiscard]] std::vector<std::string> read_plugin_list(GamebryoSaveReader& r,
+[[nodiscard]] std::vector<std::string> read_plugin_list(GamebryoSaveReader &r,
                                                         std::size_t count);
 
 // FILETIME -> epoch seconds, treating the 100ns-since-1601 value as UTC.

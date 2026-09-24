@@ -12,21 +12,19 @@
 #include "gmm_abi_v2.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
-  int skyrim_save_parser(const char* path, const char* game_id, GmmSaveDataV2* out,
-                         void* user_data);
+int skyrim_save_parser(const char *path, const char *game_id, GmmSaveDataV2 *out,
+                       void *user_data);
 
-  int skyrimse_save_parser(const char* path, const char* game_id, GmmSaveDataV2* out,
-                           void* user_data);
+int skyrimse_save_parser(const char *path, const char *game_id, GmmSaveDataV2 *out,
+                         void *user_data);
 
-  int skyrimvr_save_parser(const char* path, const char* game_id, GmmSaveDataV2* out,
-                          void* user_data);
+int skyrimvr_save_parser(const char *path, const char *game_id, GmmSaveDataV2 *out,
+                         void *user_data);
 
-  GmmSaveOverlayV2* skyrimse_save_overlay(const GmmSaveDataV2* save,
-                                          void* user_data);
+GmmSaveOverlayV2 *skyrimse_save_overlay(const GmmSaveDataV2 *save, void *user_data);
 
 #ifdef __cplusplus
 }
