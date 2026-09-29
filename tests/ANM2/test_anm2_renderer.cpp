@@ -592,31 +592,44 @@ static void expected_canvas(const Anm2Frame& f, double* w, double* h)
 
 /* Two frames taken from a real shipped animation - the Death animation of
  * 407.000_hush.anm2, layer 3 - whose scales are out by three orders of
- * magnitude. Each one is over a different limit, which is what makes them
- * worth pinning:
+ * magnitude. They sit either side of the one limit that refuses, which is what
+ * makes them worth pinning:
  *
  *   frame 3:  32 x 115 at 14000% x 10000%  ->  4480 x 11500
- *     area 51,520,000 px, inside kAnm2MaxCanvasPixels, but the 11500px edge is
- *     over kAnm2MaxCanvasEdge. Caught by the edge limit alone.
+ *     area 51,520,000 px, inside kAnm2MaxCanvasPixels, so it is measured and
+ *     then drawn whole at 400 x 1024 - over the edge cap, not over the budget.
  *   frame 4:  43 x 126 at 16800% x 10000%  ->  7224 x 12600
- *     area 91,022,400 px, over kAnm2MaxCanvasPixels, as is the edge. Caught by
- *     the area limit even if the edge limit were removed.
+ *     area 91,022,400 px, over kAnm2MaxCanvasPixels. Not measured, not drawn.
  *
- * Together they are the argument for having both limits rather than one. */
+ * The edge between the two is the edge cap, and it is a scaling target rather
+ * than a refusal: the first frame's 11500px edge is not a reason to withhold
+ * the animation. Only the budget refuses. */
 struct HushFrame
 {
   int w, h, xs, ys;
   double want_w, want_h;
+  bool refused;
 };
 
 const HushFrame kHushFrames[] = {
-    {32, 115, 14000, 10000, 4480.0, 11500.0},
-    {43, 126, 16800, 10000, 7224.0, 12600.0},
+    {32, 115, 14000, 10000, 4480.0, 11500.0, false},
+    {43, 126, 16800, 10000, 7224.0, 12600.0, true},
 };
 
-void test_oversize_canvas_is_refused_not_allocated()
+/* A content box over the pixel budget is not drawn, and the gate is still
+ * ahead of the allocation. Both halves matter: the measurement declines to
+ * name the size the file asked for, and the render returns the notice rather
+ * than an image carrying the requested dimensions.
+ *
+ * The rows walked here are the ones over the budget. Being over the edge cap
+ * is not among them - that is handled by scaling down, and kHushFrames carries
+ * a real frame on that side of the line to prove the two are not confused. */
+void test_oversize_content_box_is_refused()
 {
   for (const HushFrame& hf : kHushFrames) {
+    if (!hf.refused)
+      continue;
+
     Anm2Frame f = frame_at(0, 0, 0, 0, hf.w, hf.h, 0, hf.xs, hf.ys);
     Animation a = single_layer(f);
 
@@ -627,8 +640,7 @@ void test_oversize_canvas_is_refused_not_allocated()
     expected_canvas(f, &want_w, &want_h);
     CHECK_NEAR(want_w, hf.want_w, 0.5);
     CHECK_NEAR(want_h, hf.want_h, 0.5);
-    CHECK(want_w > kAnm2MaxCanvasEdge || want_h > kAnm2MaxCanvasEdge);
-    CHECK(want_w * want_h > static_cast<double>(kAnm2MaxCanvasPixels) / 4.0);
+    CHECK(want_w * want_h > static_cast<double>(kAnm2MaxCanvasPixels));
 
     /* The measurement refuses to name the hostile size. */
     auto [cw, ch] = anm2_compute_animation_rect(a, 400, 300);
@@ -650,20 +662,27 @@ void test_oversize_canvas_is_refused_not_allocated()
     CHECK(img.height() <= kAnm2MaxCanvasEdge);
     CHECK(img.width() < static_cast<int>(want_w) ||
           img.height() < static_cast<int>(want_h));
-
-    /* The same gate covers a hostile size arriving from the caller with an
-     * otherwise ordinary animation, which is the second way in: the file is
-     * fine, the canvas the host was told about is not. */
-    QList<LayerDef> defs{LayerDef{0, QStringLiteral("l"), 0}};
-    std::map<int, QPixmap> sheets{{0, solid_sheet(64, 64)}};
-    Animation small = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
-    QImage hostile = anm2_render_frame_at_time(small, defs, sheets, 0.0f,
-                                               7804, 17820);
-    CHECK(!hostile.isNull());
-    CHECK(hostile.width() != 7804);
-    CHECK(hostile.height() != 17820);
-    CHECK(anm2_canvas_within_limits(hostile.width(), hostile.height()));
   }
+
+  /* The same gate covers a hostile size arriving from the caller with an
+   * otherwise ordinary animation, which is the second way in: the file is
+   * fine, the canvas the host was told about is not. 7804 x 17820 is the
+   * canvas an XScale of 14000 produces. */
+  QList<LayerDef> defs{LayerDef{0, QStringLiteral("l"), 0}};
+  std::map<int, QPixmap> sheets{{0, solid_sheet(64, 64)}};
+  Animation small = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+  QImage hostile = anm2_render_frame_at_time(small, defs, sheets, 0.0f,
+                                             7804, 17820);
+  CHECK(!hostile.isNull());
+  CHECK(hostile.width() != 7804);
+  CHECK(hostile.height() != 17820);
+  CHECK(anm2_canvas_within_limits(hostile.width(), hostile.height()));
+  /* Refused rather than scaled down to the cap, which is the other thing the
+   * renderer does with a large canvas and would otherwise be indistinguishable
+   * here on size alone. The notice is a fixed 480 x 160 whatever was asked
+   * for, so it cannot be mistaken for a scaled animation. */
+  CHECK_EQ(hostile.width(), 480);
+  CHECK_EQ(hostile.height(), 160);
 
   /* The same file read through the parser, so the refusal is shown to follow
    * the numbers in the XML rather than a struct the test built by hand. */
@@ -701,58 +720,220 @@ void test_oversize_canvas_is_refused_not_allocated()
   }
 }
 
-/* A canvas the limits allow is drawn, at the size the file asked for.
+/* The largest canvas any real animation produces is drawn whole, at a reduced
+ * size.
  *
- * The size is the one measured from real data: 3000 x 3000 at 200% is the
- * geometry of zissAura.anm2, whose crop really does sit inside a 3000 x 3000
- * sheet on disk. It is the largest canvas any of the 25077 real animations
- * with sane scales produces, and it sits inside the cap - so if it renders,
- * the cap is not clipping real content. The negative control is the same
- * animation with its scale raised just past the point where the edge limit
- * bites, which must be refused rather than quietly drawn at a reduced size. */
+ * 3000 x 3000 at 200% is the geometry of zissAura.anm2, whose crop really does
+ * sit inside a 3000 x 3000 sheet on disk, and it is the largest canvas of the
+ * 25077 real animations with sane scales: 6000 x 6000 of content, plus the
+ * padding, is 6020 x 6020. That is over the 1024 edge cap, so it is scaled
+ * down rather than withheld, and the output is pinned at the exact size that
+ * implies - 1024 x 1024, because 6020 and 6020 are the same length and the
+ * same factor therefore lands both on the cap.
+ *
+ * Drawn whole is the claim worth checking, so the assertions are about the
+ * sprite still covering its whole 6000 x 6000 box and the padding still
+ * standing off it. A clip would show up as content running to the last pixel
+ * of the canvas, which is a width of 1024 rather than 1020. The negative
+ * control is the same animation small enough to fit the cap, which must come
+ * through at its own size and unscaled - otherwise "reduced to fit" would pass
+ * for any canvas, including one that was never reduced. */
 void test_measured_real_maximum_still_renders()
 {
   Anm2Frame f = frame_at(0, 0, 0, 0, 3000, 3000, 0, 200, 200);
   Animation a = single_layer(f);
 
-  /* 3000 x 3000 at 200% is 6000 x 6000 of content, plus the canvas padding:
-   * the 6020 x 6020 canvas measured from the real file. */
   auto [cw, ch] = anm2_compute_animation_rect(a, 400, 300);
-  CHECK_EQ(cw, 6020);
-  CHECK_EQ(ch, 6020);
+  CHECK_EQ(cw, 1024);
+  CHECK_EQ(ch, 1024);
   CHECK(anm2_canvas_within_limits(cw, ch));
 
   QImage img = render(a, solid_sheet(3000, 3000));
-  CHECK_EQ(img.width(), 6020);
-  CHECK_EQ(img.height(), 6020);
+  CHECK_EQ(img.width(), 1024);
+  CHECK_EQ(img.height(), 1024);
 
-  /* Not a blank refusal: the sprite covers the full 6000 x 6000 content box
-   * and the canvas padding around it is the only thing left clear. */
+  /* The sheet has to be as big as the crop: QPixmap::copy() returns a null
+   * pixmap for a rectangle that is not inside the source, so a small sheet
+   * here would draw nothing and prove nothing. */
   Extent e = drawn_extent(img);
   CHECK(!e.empty());
-  CHECK_NEAR(e.w(), 6000.0, 2.0);
-  CHECK_NEAR(e.h(), 6000.0, 2.0);
-  CHECK_EQ(qAlpha(img.pixel(3010, 3010)), 255);
 
-  /* Negative control: 3000 x 3000 at 300% is 9000 x 9000, past the edge
-   * limit. It must be refused, and refused outright - not shrunk to fit, which
-   * would be the same silent clip the whole check exists to rule out. */
-  Anm2Frame over = frame_at(0, 0, 0, 0, 3000, 3000, 0, 300, 300);
-  Animation over_a = single_layer(over);
-  double req_w = 0, req_h = 0;
-  expected_canvas(over, &req_w, &req_h);
-  CHECK_NEAR(req_w, 9000.0, 0.5);
-  CHECK(req_w > kAnm2MaxCanvasEdge);
-  auto [ocw, och] = anm2_compute_animation_rect(over_a, 400, 300);
-  CHECK(anm2_canvas_within_limits(ocw, och));
-  QImage over_img = render(over_a, solid_sheet(64, 64));
-  CHECK_EQ(over_img.width(), ocw);
-  CHECK_EQ(over_img.height(), och);
-  /* Refused, not drawn at 6020: the two are far enough apart that the
-   * refused one is plainly not the allowed one quietly shrunk. */
-  CHECK(och < 9000);
-  CHECK(och != ch);
-  CHECK(std::fabs(static_cast<double>(och) - ch) > 1000.0);
+  /* 6000 x 6000 of content scaled by 1024 / 6020 is 1020.6, and the 20px of
+   * padding around the canvas becomes 3.4. So the sprite stops short of the
+   * canvas edge on the right and the bottom, and that gap is the thing a clip
+   * would have eaten: content running to the last pixel is what a cropped
+   * animation looks like, and 1024 wide would be exactly that. */
+  CHECK_NEAR(e.w(), 1020.0, 2.0);
+  CHECK_NEAR(e.h(), 1020.0, 2.0);
+  CHECK(e.w() < img.width());
+  CHECK(e.h() < img.height());
+  /* The origin shift puts the measured box at 0,0, so the padding is all
+   * trailing - 20px of it, reduced by the fit. */
+  CHECK_EQ(e.x0, 0);
+  CHECK_EQ(e.y0, 0);
+  CHECK_NEAR(img.width() - e.w(), 4.0, 1.0);
+  CHECK_NEAR(img.height() - e.h(), 4.0, 1.0);
+  CHECK_EQ(qAlpha(img.pixel(512, 512)), 255);
+
+  /* Negative control: the same sprite at 10% is 300 x 300, well inside the
+   * cap, and comes through at its own size. */
+  Anm2Frame small_f = frame_at(0, 0, 0, 0, 3000, 3000, 0, 10, 10);
+  auto [scw, sch] = anm2_compute_animation_rect(single_layer(small_f), 400, 300);
+  CHECK_EQ(scw, 320);
+  CHECK_EQ(sch, 320);
+  QImage small = render(single_layer(small_f), solid_sheet(3000, 3000));
+  CHECK_EQ(small.width(), 320);
+  CHECK_EQ(small.height(), 320);
+  Extent se = drawn_extent(small);
+  CHECK(!se.empty());
+  CHECK_NEAR(se.w(), 300.0, 2.0);
+  CHECK_NEAR(se.h(), 300.0, 2.0);
+  /* Unscaled means the padding is still the full 20px rather than 3.4, so the
+   * control is not passing for the same geometry the scaled case does. */
+  CHECK_NEAR(small.width() - se.w(), 20.0, 1.0);
+  CHECK_NEAR(small.height() - se.h(), 20.0, 1.0);
+}
+
+/* A canvas past the edge cap is scaled down, and the scale is the same on both
+ * axes.
+ *
+ * kHushFrames holds a real frame whose canvas is 4500 x 11520 - over the cap
+ * on its long edge, inside the pixel budget - so it is the case where the two
+ * limits have to be told apart. One factor is applied to both edges, which is
+ * what makes a reduced animation distinguishable from a clipped one: the
+ * result is 400 x 1024, not 1024 x 1024. Clamping each edge to the cap
+ * independently would give the square, which is what a reader of the code
+ * would picture if the word "cap" were taken on its own.
+ *
+ * The negative control is a canvas already inside the cap, which must be left
+ * at its own size - a fit that fired on canvases that did not need it would
+ * pass every other assertion in this file. */
+void test_oversize_canvas_is_scaled_down()
+{
+  const HushFrame& hf = kHushFrames[0];
+  CHECK(!hf.refused);
+
+  Anm2Frame f = frame_at(0, 0, 0, 0, hf.w, hf.h, 0, hf.xs, hf.ys);
+  double want_w = 0, want_h = 0;
+  expected_canvas(f, &want_w, &want_h);
+  CHECK_NEAR(want_w, hf.want_w, 0.5);
+  CHECK_NEAR(want_h, hf.want_h, 0.5);
+  /* Over the cap, inside the budget: this is the case that scales rather than
+   * being refused, and the two checks above are what make it that case. */
+  CHECK(want_h > kAnm2MaxCanvasEdge);
+  CHECK(want_w * want_h <= static_cast<double>(kAnm2MaxCanvasPixels));
+
+  auto [cw, ch] = anm2_compute_animation_rect(single_layer(f), 400, 300);
+  /* 11520 is the long edge, so it lands on the cap and 4500 is carried along:
+   * 4500 * 1024 / 11520 is exactly 400. */
+  CHECK_EQ(ch, kAnm2MaxCanvasEdge);
+  CHECK_EQ(cw, 400);
+
+  QImage img = render(single_layer(f), solid_sheet(64, 115));
+  CHECK_EQ(img.width(), 400);
+  CHECK_EQ(img.height(), 1024);
+
+  /* Drawn whole: 4480 x 11500 of content becomes 398 x 1022, which stops short
+   * of the 400 x 1024 canvas on every side. Drawing it unscaled instead would
+   * run off all four edges and measure the full canvas, so the gap between the
+   * two is the whole claim. The sheet is as tall as the crop on purpose: a
+   * smaller one would be clipped by QPixmap::copy() and the extent would then
+   * measure the sheet rather than the content. */
+  Extent ie = drawn_extent(img);
+  CHECK(!ie.empty());
+  CHECK_NEAR(ie.w(), 398.0, 3.0);
+  CHECK_NEAR(ie.h(), 1022.0, 3.0);
+  CHECK(ie.w() < img.width());
+  CHECK(ie.h() < img.height());
+  CHECK(qAlpha(img.pixel(200, 512)) > 0);
+
+  /* Negative control: a canvas inside the cap is drawn at its own size. */
+  Anm2Frame inside_f = frame_at(0, 0, 0, 0, 900, 900, 0, 100, 100);
+  auto [icw, ich] = anm2_compute_animation_rect(single_layer(inside_f), 400, 300);
+  CHECK_EQ(icw, 920);
+  CHECK_EQ(ich, 920);
+  QImage inside = render(single_layer(inside_f), solid_sheet(900, 900));
+  CHECK_EQ(inside.width(), 920);
+  CHECK_EQ(inside.height(), 920);
+  Extent ce = drawn_extent(inside);
+  CHECK(!ce.empty());
+  CHECK_NEAR(ce.w(), 900.0, 2.0);
+  CHECK_NEAR(ce.h(), 900.0, 2.0);
+}
+
+/* The aspect ratio of the requested canvas survives the downscale.
+ *
+ * 1020 x 500 of content plus padding is a 1040 x 520 canvas, which is exactly
+ * two to one, so a single uniform factor has to produce 1024 x 512. 1024 x
+ * 1024 - the answer a per-edge clamp gives - would be the same pixels
+ * stretched, and 1024 x 510 would be one axis rounded away from the other.
+ *
+ * The negative control is the same two to one canvas below the cap, which must
+ * come through untouched, so the ratio above is a property of the scaling and
+ * not of the geometry the test happened to pick. */
+void test_downscale_preserves_aspect_ratio()
+{
+  Anm2Frame f = frame_at(0, 0, 0, 0, 1020, 500, 0, 100, 100);
+  double want_w = 0, want_h = 0;
+  expected_canvas(f, &want_w, &want_h);
+  CHECK_NEAR(want_w, 1020.0, 0.5);
+  CHECK_NEAR(want_h, 500.0, 0.5);
+
+  auto [cw, ch] = anm2_compute_animation_rect(single_layer(f), 400, 300);
+  CHECK_EQ(cw, 1024);
+  CHECK_EQ(ch, 512);
+  /* Not the square a per-edge clamp produces, and not off by a rounding step. */
+  CHECK(ch != cw);
+  CHECK_NEAR(static_cast<double>(cw) / ch, 2.0, 0.01);
+
+  QImage img = render(single_layer(f), solid_sheet(1020, 500));
+  CHECK_EQ(img.width(), 1024);
+  CHECK_EQ(img.height(), 512);
+
+  /* The ratio has to survive in the drawn pixels, not just in the canvas:
+   * 1020 x 500 of content is 1004 x 492 once scaled, and it is that pair which
+   * says the two axes were scaled by the same number. Drawn unscaled it would
+   * fill the canvas and measure 1020 x 500 instead. The sheet is as big as the
+   * crop on purpose - a smaller one would be clipped by QPixmap::copy() and the
+   * extent would measure the sheet rather than the content. */
+  Extent e = drawn_extent(img);
+  CHECK(!e.empty());
+  CHECK_NEAR(e.w(), 1004.0, 3.0);
+  CHECK_NEAR(e.h(), 492.0, 3.0);
+  CHECK_NEAR(static_cast<double>(e.w()) / e.h(), 1020.0 / 500.0, 0.03);
+  CHECK(e.w() < img.width());
+  CHECK(e.h() < img.height());
+
+  /* Same again on the draw path with a canvas handed in unfitted, which is the
+   * second way in and the one where the allocation is bounded rather than
+   * merely reported. */
+  QList<LayerDef> defs{LayerDef{0, QStringLiteral("l"), 0}};
+  std::map<int, QPixmap> sheets{{0, solid_sheet(1020, 500)}};
+  QImage direct = anm2_render_frame_at_time(single_layer(f), defs, sheets, 0.0f,
+                                            1040, 520);
+  CHECK_EQ(direct.width(), 1024);
+  CHECK_EQ(direct.height(), 512);
+  CHECK(anm2_canvas_within_limits(direct.width(), direct.height()));
+  /* Same pixels as the path above: the caller gets back the capped size and
+   * the whole content in it, which is the part that cannot come from the size
+   * arithmetic alone. */
+  Extent de = drawn_extent(direct);
+  CHECK(!de.empty());
+  CHECK_NEAR(de.w(), e.w(), 1.0);
+  CHECK_NEAR(de.h(), e.h(), 1.0);
+
+  /* Negative control: the same shape inside the cap is not scaled at all. */
+  Anm2Frame inside_f = frame_at(0, 0, 0, 0, 620, 300, 0, 100, 100);
+  auto [icw, ich] = anm2_compute_animation_rect(single_layer(inside_f), 400, 300);
+  CHECK_EQ(icw, 640);
+  CHECK_EQ(ich, 320);
+  QImage inside = render(single_layer(inside_f), solid_sheet(620, 300));
+  CHECK_EQ(inside.width(), 640);
+  CHECK_EQ(inside.height(), 320);
+  Extent ie = drawn_extent(inside);
+  CHECK(!ie.empty());
+  CHECK_NEAR(ie.w(), 620.0, 2.0);
+  CHECK_NEAR(ie.h(), 300.0, 2.0);
 }
 
 /* The refusal is drawn, not blank. A null QImage would reach the host as an
@@ -810,9 +991,14 @@ void test_oversize_is_reported_not_silent()
  * 100000 x 100000 overflows the pixel count itself. Both are reachable from
  * the file - Width and XScale are arbitrary integers.
  *
- * The negative control is 4000 x 4000: 1.6e7 px, 6.4e7 bytes, comfortably
- * inside both, so this is a case about the arithmetic and not about large
- * numbers being turned away. */
+ * The area is the limit that decides this. A canvas over the edge cap is
+ * scaled down, so being long is on its own no longer a reason to be turned
+ * away, and the rows above 1024 px that are still marked allowed are saying
+ * so: the pixel budget is what a malformed file has to get past.
+ *
+ * The negative control is 1000 x 1000: 1e6 px, comfortably inside the budget
+ * and inside the edge cap, so this is a case about the arithmetic and not
+ * about large numbers being turned away. */
 void test_canvas_size_arithmetic_cannot_overflow()
 {
   struct Spec
@@ -821,12 +1007,14 @@ void test_canvas_size_arithmetic_cannot_overflow()
     bool allowed;
   };
   const Spec specs[] = {
-      {40000, 40000, false},  // w*h fits in int32, w*h*4 does not
+      {40000, 40000, false},   // w*h fits in int32, w*h*4 does not
       {100000, 100000, false},  // w*h overflows int32 on its own
-      {1, 67108864, false},     // inside the pixel budget, past the edge
-      {4000, 4000, true},       // the control: 6.4e7 bytes, well inside
-      {8192, 8192, true},       // exactly on the cap, and allowed
-      {8193, 8192, false},      // one pixel past the cap
+      {1, 67108864, true},      // exactly on the budget, and allowed
+      {67108864, 2, false},     // one pixel of area over the budget
+      {1000, 1000, true},       // the control, inside both
+      {1024, 1024, true},       // the cap exactly: a square the cap cannot clip
+      {1025, 1024, true},       // one past the cap, still inside the budget
+      {4000, 4000, true},       // well past the cap, still inside the budget
   };
 
   for (const Spec& s : specs) {
@@ -855,14 +1043,14 @@ void test_canvas_size_arithmetic_cannot_overflow()
    * has to be as big as the crop: QPixmap::copy() returns a null pixmap for a
    * rectangle that is not inside the source, so a small sheet here would draw
    * nothing and prove nothing. */
-  Anm2Frame ok_f = frame_at(0, 0, 0, 0, 4000, 4000, 0, 100, 100);
-  QImage ok      = render(single_layer(ok_f), solid_sheet(4000, 4000));
-  CHECK_EQ(ok.width(), 4020);
-  CHECK_EQ(ok.height(), 4020);
+  Anm2Frame ok_f = frame_at(0, 0, 0, 0, 1000, 1000, 0, 100, 100);
+  QImage ok      = render(single_layer(ok_f), solid_sheet(1000, 1000));
+  CHECK_EQ(ok.width(), 1020);
+  CHECK_EQ(ok.height(), 1020);
   Extent ok_e = drawn_extent(ok);
   CHECK(!ok_e.empty());
-  CHECK_NEAR(ok_e.w(), 4000.0, 2.0);
-  CHECK_NEAR(ok_e.h(), 4000.0, 2.0);
+  CHECK_NEAR(ok_e.w(), 1000.0, 2.0);
+  CHECK_NEAR(ok_e.h(), 1000.0, 2.0);
 }
 
 /* The scale needs no clamp of its own, and none is applied.
@@ -953,11 +1141,11 @@ void test_frame_count_is_bounded()
  *
  * The test is built so that it could fail. The null carries a transform of
  * 100000%, which is the largest XScale in any real file and which on a layer
- * would be far past the canvas limit. The negative control is the same
- * transform applied to a layer instead, in a file that is otherwise
- * byte-for-byte the same: if that one is refused and this one is not, then
- * what is being measured is which tag the transform sits under, and the
- * "not composed" claim is real. */
+ * would put 32 x 1000% - a 32000px edge, over the pixel budget - into the
+ * canvas. The negative control is the same transform applied to a layer
+ * instead, in a file that is otherwise byte-for-byte the same: if that one is
+ * refused and this one is not, then what is being measured is which tag the
+ * transform sits under, and the "not composed" claim is real. */
 void test_null_animations_do_not_change_the_canvas()
 {
   const char* kWithNull =
@@ -1049,9 +1237,10 @@ void test_null_animations_do_not_change_the_canvas()
   CHECK_NEAR(ne.h(), 32.0, 1.5);
 
   /* Negative control: the same transform on a layer does change the answer,
-   * and 32 x 1000% is 32000px, so the canvas is refused outright. If this did
-   * not come out different from the case above, the case above would be
-   * proving nothing about which tag was measured. */
+   * and 32 x 1000% is 32000px, so the content box is over the pixel budget and
+   * the canvas is refused outright. If this did not come out different from the
+   * case above, the case above would be proving nothing about which tag was
+   * measured. */
   CHECK(anm2_canvas_within_limits(on_layer.cw, on_layer.ch));
   CHECK(!on_layer.img.isNull());
   CHECK(on_layer.cw != with_null.cw);
@@ -1201,8 +1390,10 @@ const Case kCases[] = {
     {"tint_offset_applies_to_untouched_tint", test_tint_offset_applies_to_untouched_tint},
     {"placeholder_path_scales_once", test_placeholder_path_scales_once},
     {"parser_scale_attribute_defaults", test_parser_scale_attribute_defaults},
-    {"oversize_canvas_is_refused_not_allocated", test_oversize_canvas_is_refused_not_allocated},
+    {"oversize_content_box_is_refused", test_oversize_content_box_is_refused},
     {"measured_real_maximum_still_renders", test_measured_real_maximum_still_renders},
+    {"oversize_canvas_is_scaled_down", test_oversize_canvas_is_scaled_down},
+    {"downscale_preserves_aspect_ratio", test_downscale_preserves_aspect_ratio},
     {"oversize_is_reported_not_silent", test_oversize_is_reported_not_silent},
     {"canvas_size_arithmetic_cannot_overflow", test_canvas_size_arithmetic_cannot_overflow},
     {"scale_is_bounded_by_the_canvas_not_clamped", test_scale_is_bounded_by_the_canvas_not_clamped},

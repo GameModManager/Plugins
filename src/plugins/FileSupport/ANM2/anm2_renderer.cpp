@@ -35,8 +35,6 @@
 bool anm2_canvas_within_limits(int w, int h) {
   if (w <= 0 || h <= 0)
     return false;
-  if (w > kAnm2MaxCanvasEdge || h > kAnm2MaxCanvasEdge)
-    return false;
   return static_cast<qint64>(w) * static_cast<qint64>(h) <= kAnm2MaxCanvasPixels;
 }
 
@@ -52,10 +50,35 @@ bool anm2_canvas_within_limits(int w, int h) {
 static bool anm2_span_within_limits(double span_x, double span_y) {
   const double w = span_x + 2.0 * kAnm2CanvasPad;
   const double h = span_y + 2.0 * kAnm2CanvasPad;
-  if (w > static_cast<double>(kAnm2MaxCanvasEdge) ||
-      h > static_cast<double>(kAnm2MaxCanvasEdge))
-    return false;
   return w * h <= static_cast<double>(kAnm2MaxCanvasPixels);
+}
+
+/* The canvas a measured box asks for, before the edge cap is applied. */
+static void anm2_natural_canvas(const QRectF &bounds, int *w, int *h) {
+  *w = std::max(1,
+                static_cast<int>(bounds.right() - bounds.left()) + kAnm2CanvasPad * 2);
+  *h = std::max(1,
+                static_cast<int>(bounds.bottom() - bounds.top()) + kAnm2CanvasPad * 2);
+}
+
+/* Scale that brings a canvas inside the edge cap, and the size it produces.
+ *
+ * One factor on both axes, so the aspect ratio survives: the longest edge
+ * lands exactly on the cap and the other is derived from it, which is what
+ * tells a scaled-down animation apart from a clipped one. The size is rounded
+ * rather than truncated so a canvas that divides evenly does not come back one
+ * pixel short, and neither edge is allowed to round down to nothing.
+ *
+ * Returns 1.0 for a canvas that already fits, so callers that only want the
+ * size can ignore it and the draw path needs no branch of its own. */
+static double anm2_edge_scale(int w, int h, int *out_w, int *out_h) {
+  const int longest = std::max(w, h);
+  const double s    = longest > kAnm2MaxCanvasEdge
+                          ? static_cast<double>(kAnm2MaxCanvasEdge) / longest
+                          : 1.0;
+  *out_w            = std::max(1, static_cast<int>(std::lround(w * s)));
+  *out_h            = std::max(1, static_cast<int>(std::lround(h * s)));
+  return s;
 }
 
 /* Fixed size of the refusal image. Constant, not derived from the refused
@@ -86,9 +109,10 @@ QImage anm2_oversize_notice() {
   p.setPen(QColor(200, 200, 200));
   p.drawText(box.adjusted(16, 58, -16, 0),
              Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
-             QStringLiteral("It asks for a canvas beyond %1 x %2 pixels. "
-                            "No game asset does.")
-                 .arg(kAnm2MaxCanvasEdge)
+             QStringLiteral("It asks for more than %1 million pixels. Anything "
+                            "above that cannot be drawn; anything above %2 "
+                            "pixels is drawn reduced to fit.")
+                 .arg(kAnm2MaxCanvasPixels / (1000 * 1000))
                  .arg(kAnm2MaxCanvasEdge));
 
   p.end();
@@ -379,11 +403,14 @@ std::pair<int, int> anm2_compute_animation_rect(const Animation &a, int default_
 
   /* The span is known to be inside the limits, so both of these fit in an int
    * and the conversion is exact. */
-  int w = std::max(1, static_cast<int>(bounds.right() - bounds.left()) +
-                          kAnm2CanvasPad * 2);
-  int h = std::max(1, static_cast<int>(bounds.bottom() - bounds.top()) +
-                          kAnm2CanvasPad * 2);
-  return {w, h};
+  int w = 0, h = 0;
+  anm2_natural_canvas(bounds, &w, &h);
+
+  /* Reported already scaled down, so a caller that allocates this size gets an
+   * image the renderer can actually fill. */
+  int fit_w = 0, fit_h = 0;
+  anm2_edge_scale(w, h, &fit_w, &fit_h);
+  return {fit_w, fit_h};
 }
 
 /* --------------------------------------------------------------------------
@@ -409,7 +436,26 @@ QImage anm2_render_frame_at_time(const Animation &a, const QList<LayerDef> &laye
   if (measured == Anm2Bounds::TooLarge || !anm2_canvas_within_limits(cw, ch))
     return anm2_oversize_notice();
 
-  QImage canvas(cw, ch, QImage::Format_RGBA8888);
+  /* A size inside the area limit but past the edge cap is drawn whole at a
+   * reduced size rather than cut off, so the canvas allocated below is the one
+   * inside the cap and the content is scaled into it. The factor comes from
+   * the measured box rather than from cw/ch, because a caller that sized its
+   * buffer through anm2_compute_animation_rect() has already been given the
+   * capped size and scaling by that against itself would leave the content
+   * twice the size of the canvas. Taking the smaller of the two per-axis
+   * ratios puts the content inside the canvas whichever axis the caller's size
+   * is short on, and for a caller that used the compute entry point the two
+   * ratios are equal. */
+  int fit_w = 0, fit_h = 0;
+  double fit = anm2_edge_scale(cw, ch, &fit_w, &fit_h);
+  if (measured == Anm2Bounds::Ok) {
+    int natural_w = 0, natural_h = 0;
+    anm2_natural_canvas(bounds, &natural_w, &natural_h);
+    fit = std::min(static_cast<double>(fit_w) / natural_w,
+                   static_cast<double>(fit_h) / natural_h);
+  }
+
+  QImage canvas(fit_w, fit_h, QImage::Format_RGBA8888);
   canvas.fill(Qt::transparent);
   QPainter p(&canvas);
   p.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -423,8 +469,13 @@ QImage anm2_render_frame_at_time(const Animation &a, const QList<LayerDef> &laye
   int origin_y    = has_bounds ? -qFloor(bounds.top()) : 0;
 
   /* Root transform at this time */
-  Anm2Frame rootFrame      = anm2_frame_generate({a.root_frame}, time);
-  QTransform rootTransform = anm2_root_transform(rootFrame, origin_x, origin_y);
+  Anm2Frame rootFrame = anm2_frame_generate({a.root_frame}, time);
+  /* The fit goes on the right so it is applied after the origin shift, and
+   * shrinks the padded content into the canvas rather than the canvas into the
+   * content. The padding therefore stays kAnm2CanvasPad wide until the very
+   * last step, and what survives of it is what the fit leaves behind. */
+  QTransform rootTransform = anm2_root_transform(rootFrame, origin_x, origin_y) *
+                             QTransform::fromScale(fit, fit);
 
   /* Render each layer using on-demand interpolated frames */
   for (const auto &la : a.layer_animations) {

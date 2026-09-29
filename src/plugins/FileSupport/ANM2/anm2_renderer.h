@@ -30,23 +30,37 @@
  * measured over 25077 real animations whose scale attributes are all within
  * +/-200%: the largest canvas any of them produces is 6020 x 6020 px, and the
  * next largest is 520 x 3020 - a 23x gap, so 6020 is a lone outlier rather
- * than the top of a continuum. 8192 and 2^26 sit above both with room to
- * spare while turning away the 7804 x 17820 canvas that an XScale of 14000
- * produces, and anything the attribute space can express beyond that.
+ * than the top of a continuum.
+ *
+ * Two different things are bounded here, and they are bounded in different
+ * ways. A canvas above the edge cap is scaled down to fit, because real files
+ * reach 6020 and the whole animation is still worth showing. A content box
+ * above the area limit is not drawn at all, because at that size the numbers
+ * are not a canvas and the arithmetic behind them stops being meaningful.
  *
  * ------------------------------------------------------------------------ */
 
 /* Padding the canvas reserves around the measured content box. */
 inline constexpr int kAnm2CanvasPad = 10;
 
-/* Largest single canvas edge, in pixels. The pixel budget alone does not bound
- * this: 67108864 x 1 is inside the budget and still past what QPixmap accepts
- * and past any sane display, so the edge is capped in its own right. */
-inline constexpr int kAnm2MaxCanvasEdge = 8192;
+/* Largest edge the renderer will produce, in pixels.
+ *
+ * This bounds the allocation, not the file: a canvas longer than this is
+ * scaled down by the same factor on both axes until its longest edge fits, so
+ * the animation is drawn whole and the QImage behind it never exceeds
+ * 1024 x 1024 px - 4 MiB as RGBA8888. */
+inline constexpr int kAnm2MaxCanvasEdge = 1024;
 
-/* Largest canvas area, in pixels: 2^26 px, which is 256 MiB as RGBA8888. One
- * frame is briefly three of that - the QImage, the convertToFormat copy, and
- * the QPixmap the host builds from it. */
+/* Largest content box that will be measured, in pixels: 2^26.
+ *
+ * The area is the limit that refuses, and it sits above the 6020 x 6020 the
+ * worst real animation produces (3.6e7 px) with room to spare while turning
+ * away the 7804 x 17820 canvas an XScale of 14000 produces (1.4e8 px) and
+ * anything the attribute space can express beyond that. It is not redundant
+ * with the edge cap: a 67108864 x 1 canvas is inside the area limit and would
+ * otherwise be measured and scaled to 1024 x 1, and passing the area limit is
+ * also what makes the conversion of the measured box to an int safe, since
+ * both edges are then known to be under 2^26. */
 inline constexpr qint64 kAnm2MaxCanvasPixels = 1LL << 26;
 
 /* Longest animation the renderer will work through, in frames.
@@ -88,10 +102,12 @@ int anm2_compute_total_frames(const Animation &a);
 /* Compute the fixed canvas size across all frames using interpolated
  * keyframes. Returns {width, height}.
  *
- * A file whose sprites ask for more than kAnm2MaxCanvasEdge or
- * kAnm2MaxCanvasPixels is not measured, sized, or rendered: every entry point
- * falls back to the size of anm2_oversize_notice() instead, so the size a
- * caller gets back always describes an image it can actually draw. */
+ * A content box over kAnm2MaxCanvasPixels is not measured, sized, or
+ * rendered: every entry point falls back to the size of
+ * anm2_oversize_notice() instead, so the size a caller gets back always
+ * describes an image it can actually draw. A box over
+ * kAnm2MaxCanvasEdge is scaled down to fit instead, so the size reported is
+ * the size of the scaled-down image and the caller allocates exactly it. */
 std::pair<int, int> anm2_compute_animation_rect(const Animation &a, int default_w,
                                                 int default_h);
 
