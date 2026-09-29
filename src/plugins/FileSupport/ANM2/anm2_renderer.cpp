@@ -274,6 +274,12 @@ enum class Anm2Bounds {
  * animation. Both the canvas size and the draw origin come from this, so they
  * cannot drift apart.
  *
+ * Only layer animations are measured. A <NullAnimation> is deliberately not
+ * folded in, and that is a decision rather than an omission: the frames under
+ * one move an object belonging to the running game, not a sprite in this file,
+ * so they have no crop rectangle and no dimensions to place. See the note on
+ * Animation in anm2_types.h.
+ *
  * Stops as soon as the box it is accumulating outgrows the limits, so a file
  * asking for a canvas of billions of pixels costs the same as one asking for
  * a few thousand: the loop runs until the box is too big, not to the end of

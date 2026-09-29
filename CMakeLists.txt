@@ -115,7 +115,9 @@ if(GMM_BUILD_TESTS)
             oversize_is_reported_not_silent
             canvas_size_arithmetic_cannot_overflow
             scale_is_bounded_by_the_canvas_not_clamped
-            frame_count_is_bounded)
+            frame_count_is_bounded
+            null_animations_do_not_change_the_canvas
+            skipped_sections_leave_the_animation_intact)
         add_test(NAME anm2_geometry.${case}
                  COMMAND test_anm2_renderer ${case})
     endforeach()
@@ -137,6 +139,8 @@ if(GMM_BUILD_TESTS)
         anm2_geometry.canvas_size_arithmetic_cannot_overflow
         anm2_geometry.scale_is_bounded_by_the_canvas_not_clamped
         anm2_geometry.frame_count_is_bounded
+        anm2_geometry.null_animations_do_not_change_the_canvas
+        anm2_geometry.skipped_sections_leave_the_animation_intact
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 

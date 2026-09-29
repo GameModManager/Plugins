@@ -941,6 +941,247 @@ void test_frame_count_is_bounded()
   CHECK(4522 < kAnm2MaxTotalFrames);
 }
 
+/* -- null animations ------------------------------------------------------ */
+
+/* A <NullAnimation> does not move the canvas, and that is the correct
+ * rendering rather than a dropped animation.
+ *
+ * A null addresses an object in the running game - the pickup item Isaac is
+ * holding, an eye, a tractor beam - and the file neither contains a sprite for
+ * it nor names the animation that does. So there is nothing to draw, and
+ * nothing to compose onto a layer.
+ *
+ * The test is built so that it could fail. The null carries a transform of
+ * 100000%, which is the largest XScale in any real file and which on a layer
+ * would be far past the canvas limit. The negative control is the same
+ * transform applied to a layer instead, in a file that is otherwise
+ * byte-for-byte the same: if that one is refused and this one is not, then
+ * what is being measured is which tag the transform sits under, and the
+ * "not composed" claim is real. */
+void test_null_animations_do_not_change_the_canvas()
+{
+  const char* kWithNull =
+      "<AnimatedActor><Content><Spritesheets/><Layers>"
+      "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers>"
+      "<Nulls><Null Name=\"pickup item\" Id=\"0\"/></Nulls>"
+      "<Events><Event Name=\"s\" Id=\"0\"/></Events></Content>"
+      "<Animations DefaultAnimation=\"Default\">"
+      "<Animation Name=\"Default\" FrameNum=\"1\" Loop=\"false\">"
+      "<RootAnimation><Frame XPosition=\"0\" YPosition=\"0\" Delay=\"1\"/></RootAnimation>"
+      "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "</LayerAnimation></LayerAnimations>"
+      "<NullAnimations><NullAnimation NullId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" XScale=\"100000\" YScale=\"100000\" "
+      "Delay=\"1\"/>"
+      "</NullAnimation></NullAnimations>"
+      "<Triggers><Trigger EventId=\"0\" AtFrame=\"0\"/></Triggers>"
+      "</Animation></Animations></AnimatedActor>";
+
+  /* Identical except that the big transform moves from the null onto the
+   * layer. */
+  const char* kOnLayer =
+      "<AnimatedActor><Content><Spritesheets/><Layers>"
+      "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers>"
+      "<Nulls><Null Name=\"pickup item\" Id=\"0\"/></Nulls>"
+      "<Events><Event Name=\"s\" Id=\"0\"/></Events></Content>"
+      "<Animations DefaultAnimation=\"Default\">"
+      "<Animation Name=\"Default\" FrameNum=\"1\" Loop=\"false\">"
+      "<RootAnimation><Frame XPosition=\"0\" YPosition=\"0\" Delay=\"1\"/></RootAnimation>"
+      "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\" "
+      "XScale=\"100000\" YScale=\"100000\"/>"
+      "</LayerAnimation></LayerAnimations>"
+      "<NullAnimations><NullAnimation NullId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" XScale=\"100000\" YScale=\"100000\" "
+      "Delay=\"1\"/>"
+      "</NullAnimation></NullAnimations>"
+      "<Triggers><Trigger EventId=\"0\" AtFrame=\"0\"/></Triggers>"
+      "</Animation></Animations></AnimatedActor>";
+
+  QTemporaryDir dir;
+  CHECK(dir.isValid());
+  if (!dir.isValid())
+    return;
+
+  struct Parsed
+  {
+    Animation anim;
+    int cw     = 0;
+    int ch     = 0;
+    QImage img;
+  };
+
+  auto load = [&](const char* xml, const char* stem) {
+    Parsed p;
+    QString path = dir.filePath(QString::fromLatin1(stem) + QStringLiteral(".anm2"));
+    {
+      QFile f(path);
+      CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+      if (!f.isOpen())
+        return p;
+      f.write(xml);
+      f.close();
+    }
+    QList<Spritesheet> sheets;
+    QList<LayerDef> defs;
+    CHECK(anm2_parse_file(path, p.anim, sheets, defs, nullptr));
+    std::map<int, QPixmap> sheets_by_id{{0, solid_sheet(64, 64)}};
+    auto [w, h]           = anm2_compute_animation_rect(p.anim, 400, 300);
+    p.cw                 = w;
+    p.ch                 = h;
+    p.img                = anm2_render_frame_at_time(p.anim, defs, sheets_by_id,
+                                                      0.0f, w, h);
+    return p;
+  };
+
+  Parsed with_null = load(kWithNull, "with_null");
+  Parsed on_layer  = load(kOnLayer, "on_layer");
+
+  /* The null does not reach the canvas. The layer is a 32x32 sprite, so the
+   * canvas is that sprite plus the 20px of padding. */
+  CHECK_EQ(with_null.cw, 52);
+  CHECK_EQ(with_null.ch, 52);
+  CHECK_EQ(with_null.img.width(), 52);
+  CHECK(!drawn_extent(with_null.img).empty());
+  Extent ne = drawn_extent(with_null.img);
+  CHECK_NEAR(ne.w(), 32.0, 1.5);
+  CHECK_NEAR(ne.h(), 32.0, 1.5);
+
+  /* Negative control: the same transform on a layer does change the answer,
+   * and 32 x 1000% is 32000px, so the canvas is refused outright. If this did
+   * not come out different from the case above, the case above would be
+   * proving nothing about which tag was measured. */
+  CHECK(anm2_canvas_within_limits(on_layer.cw, on_layer.ch));
+  CHECK(!on_layer.img.isNull());
+  CHECK(on_layer.cw != with_null.cw);
+  CHECK(on_layer.ch != with_null.ch);
+  /* The refused one is not a 32px sprite: it carries the notice, which is a
+   * different shape entirely. */
+  Extent le = drawn_extent(on_layer.img);
+  CHECK(!le.empty());
+  CHECK(std::fabs(static_cast<double>(le.w()) - 32.0) > 100.0);
+  CHECK_EQ(on_layer.img.height(), on_layer.ch);
+  CHECK_EQ(with_null.img.height(), with_null.ch);
+
+  /* QTemporaryDir removes the tree on destruction. */
+}
+
+/* The sections the parser skips are skipped cleanly: adding them to a file
+ * leaves the parsed animation exactly as it was. If the skip were consuming
+ * the wrong elements, this is where it would show - a frame lost to a
+ * miscounted read, or a layer animation swallowed by a stray skip.
+ *
+ * The negative control is the same comparison run against a file whose layer
+ * frame really does differ, so "identical" is a claim about these two files
+ * and not about the comparison itself. */
+void test_skipped_sections_leave_the_animation_intact()
+{
+  const char* kPlain =
+      "<AnimatedActor><Content><Spritesheets/><Layers>"
+      "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers></Content>"
+      "<Animations DefaultAnimation=\"Default\">"
+      "<Animation Name=\"Default\" FrameNum=\"2\" Loop=\"false\">"
+      "<RootAnimation><Frame XPosition=\"3\" YPosition=\"4\" Delay=\"1\"/></RootAnimation>"
+      "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "<Frame XPosition=\"5\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "</LayerAnimation></LayerAnimations>"
+      "</Animation></Animations></AnimatedActor>";
+
+  const char* kDecorated =
+      "<AnimatedActor><Content><Spritesheets/><Layers>"
+      "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers>"
+      "<Nulls><Null Name=\"OverlayEffect\" Id=\"0\"/><Null Name=\"Mouth\" Id=\"1\"/>"
+      "</Nulls><Events><Event Name=\"s\" Id=\"0\"/></Events></Content>"
+      "<Animations DefaultAnimation=\"Default\">"
+      "<Animation Name=\"Default\" FrameNum=\"2\" Loop=\"false\">"
+      "<RootAnimation><Frame XPosition=\"3\" YPosition=\"4\" Delay=\"1\"/></RootAnimation>"
+      "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "<Frame XPosition=\"5\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "</LayerAnimation></LayerAnimations>"
+      "<NullAnimations><NullAnimation NullId=\"1\" Visible=\"false\">"
+      "<Frame XPosition=\"900\" YPosition=\"900\" XScale=\"500\" YScale=\"500\" "
+      "Delay=\"1\"/>"
+      "</NullAnimation></NullAnimations>"
+      "<Triggers><Trigger EventId=\"0\" AtFrame=\"1\"/></Triggers>"
+      "</Animation></Animations></AnimatedActor>";
+
+  /* The control: a file whose second layer frame really does sit elsewhere. */
+  const char* kMoved =
+      "<AnimatedActor><Content><Spritesheets/><Layers>"
+      "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers></Content>"
+      "<Animations DefaultAnimation=\"Default\">"
+      "<Animation Name=\"Default\" FrameNum=\"2\" Loop=\"false\">"
+      "<RootAnimation><Frame XPosition=\"3\" YPosition=\"4\" Delay=\"1\"/></RootAnimation>"
+      "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+      "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "<Frame XPosition=\"25\" YPosition=\"0\" Width=\"32\" Height=\"32\" Delay=\"1\"/>"
+      "</LayerAnimation></LayerAnimations>"
+      "</Animation></Animations></AnimatedActor>";
+
+  QTemporaryDir dir;
+  CHECK(dir.isValid());
+  if (!dir.isValid())
+    return;
+
+  auto frames_of = [&](const char* xml, const char* stem, QList<Anm2Frame>* out,
+                       int* frame_num) {
+    QString path = dir.filePath(QString::fromLatin1(stem) + QStringLiteral(".anm2"));
+    {
+      QFile f(path);
+      CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+      if (!f.isOpen())
+        return false;
+      f.write(xml);
+      f.close();
+    }
+    Animation anim;
+    QList<Spritesheet> sheets;
+    QList<LayerDef> defs;
+    bool ok = anm2_parse_file(path, anim, sheets, defs, nullptr);
+    CHECK(ok);
+    *out      = anim.layer_animations.isEmpty() ? QList<Anm2Frame>{}
+                                                : anim.layer_animations[0].frames;
+    *frame_num = anim.frame_num;
+    return ok;
+  };
+
+  QList<Anm2Frame> plain_f, decorated_f, moved_f;
+  int plain_n = 0, decorated_n = 0, moved_n = 0;
+  frames_of(kPlain, "plain", &plain_f, &plain_n);
+  frames_of(kDecorated, "decorated", &decorated_f, &decorated_n);
+  frames_of(kMoved, "moved", &moved_f, &moved_n);
+
+  /* Both files declare the same frame count and both keep both keyframes, so
+   * the decorated file's extra sections neither ate a frame nor the frame
+   * number. */
+  CHECK_EQ(plain_n, 2);
+  CHECK_EQ(decorated_n, plain_n);
+  CHECK_EQ(decorated_f.size(), plain_f.size());
+  CHECK_EQ(decorated_f.size(), 2);
+  for (int i = 0; i < plain_f.size() && i < decorated_f.size(); ++i) {
+    CHECK_EQ(decorated_f[i].x_position, plain_f[i].x_position);
+    CHECK_EQ(decorated_f[i].x_scale, plain_f[i].x_scale);
+    CHECK_EQ(decorated_f[i].width, plain_f[i].width);
+    CHECK_EQ(decorated_f[i].height, plain_f[i].height);
+    CHECK_EQ(decorated_f[i].delay, plain_f[i].delay);
+  }
+
+  /* Negative control: move one number and the comparison separates them, so
+   * "identical" above is a statement about the decoration and not about the
+   * comparison being blind. */
+  CHECK(moved_f.size() == decorated_f.size());
+  if (moved_f.size() == decorated_f.size() && moved_f.size() == 2) {
+    CHECK_EQ(moved_f[1].x_position, 25);
+    CHECK(decorated_f[1].x_position != moved_f[1].x_position);
+    CHECK(plain_f[1].x_position != moved_f[1].x_position);
+  }
+
+  /* QTemporaryDir removes the tree on destruction. */
+}
+
 struct Case
 {
   const char* name;
@@ -966,6 +1207,8 @@ const Case kCases[] = {
     {"canvas_size_arithmetic_cannot_overflow", test_canvas_size_arithmetic_cannot_overflow},
     {"scale_is_bounded_by_the_canvas_not_clamped", test_scale_is_bounded_by_the_canvas_not_clamped},
     {"frame_count_is_bounded", test_frame_count_is_bounded},
+    {"null_animations_do_not_change_the_canvas", test_null_animations_do_not_change_the_canvas},
+    {"skipped_sections_leave_the_animation_intact", test_skipped_sections_leave_the_animation_intact},
 };
 
 }  // namespace
