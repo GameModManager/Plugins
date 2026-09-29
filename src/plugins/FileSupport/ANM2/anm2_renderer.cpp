@@ -377,7 +377,12 @@ int anm2_compute_total_frames(const Animation &a) {
   int total = a.frame_num;
   if (total <= 0)
     total = max_layer_frames;
-  return total;
+
+  /* Both routes into `total` are bounded here, once, because this is the
+   * number every caller multiplies a per-frame cost by: the declared FrameNum
+   * is a raw int straight out of the file, and the track length saturates at
+   * the same ceiling. */
+  return std::clamp(total, 0, kAnm2MaxTotalFrames);
 }
 
 /* --------------------------------------------------------------------------
