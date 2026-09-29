@@ -77,6 +77,77 @@ add_game_plugin(ANM2
 )
 target_link_libraries(ANM2 PRIVATE Qt6::Widgets)
 
+# ANM2 geometry tests. Only when the host asks for its test suite, so a
+# standalone plugin build pulls in no test-only code. The renderer sources are
+# compiled again into the test binary rather than linked from the module: a
+# MODULE library has no linkable import library on every platform, and the
+# point is to exercise the sources directly.
+if(GMM_BUILD_TESTS)
+    set(ANM2_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/FileSupport/ANM2")
+    add_executable(test_anm2_renderer
+        tests/ANM2/test_anm2_renderer.cpp
+        ${ANM2_SRC_DIR}/anm2_parser.cpp
+        ${ANM2_SRC_DIR}/anm2_renderer.cpp
+    )
+    target_include_directories(test_anm2_renderer PRIVATE
+        ${ABI_INCLUDE_DIR}
+        ${ANM2_SRC_DIR}
+    )
+    target_link_libraries(test_anm2_renderer PRIVATE Qt6::Widgets)
+
+    # One CTest entry per case, so a failure names itself and
+    # `ctest -R <case>` runs just that one.
+    foreach(case
+            scale_applied_once
+            scale_composes_with_crop_once
+            negative_scale_mirrors
+            pivot_at_centre_does_not_move
+            pivot_controls_layer_placement
+            pivot_reorder_negative_control
+            bounds_match_draw
+            negative_tint_offset_applies
+            tint_offset_clamps_to_channel_range
+            tint_offset_applies_to_untouched_tint
+            placeholder_path_scales_once
+            parser_scale_attribute_defaults
+            oversize_content_box_is_refused
+            measured_real_maximum_still_renders
+            oversize_canvas_is_scaled_down
+            downscale_preserves_aspect_ratio
+            oversize_is_reported_not_silent
+            canvas_size_arithmetic_cannot_overflow
+            scale_is_bounded_by_the_canvas_not_clamped
+            frame_count_is_bounded
+            null_animations_do_not_change_the_canvas
+            skipped_sections_leave_the_animation_intact)
+        add_test(NAME anm2_geometry.${case}
+                 COMMAND test_anm2_renderer ${case})
+    endforeach()
+    set_tests_properties(anm2_geometry.scale_applied_once
+        anm2_geometry.scale_composes_with_crop_once
+        anm2_geometry.negative_scale_mirrors
+        anm2_geometry.pivot_at_centre_does_not_move
+        anm2_geometry.pivot_controls_layer_placement
+        anm2_geometry.pivot_reorder_negative_control
+        anm2_geometry.bounds_match_draw
+        anm2_geometry.negative_tint_offset_applies
+        anm2_geometry.tint_offset_clamps_to_channel_range
+        anm2_geometry.tint_offset_applies_to_untouched_tint
+        anm2_geometry.placeholder_path_scales_once
+        anm2_geometry.parser_scale_attribute_defaults
+        anm2_geometry.oversize_content_box_is_refused
+        anm2_geometry.measured_real_maximum_still_renders
+        anm2_geometry.oversize_canvas_is_scaled_down
+        anm2_geometry.downscale_preserves_aspect_ratio
+        anm2_geometry.oversize_is_reported_not_silent
+        anm2_geometry.canvas_size_arithmetic_cannot_overflow
+        anm2_geometry.scale_is_bounded_by_the_canvas_not_clamped
+        anm2_geometry.frame_count_is_bounded
+        anm2_geometry.null_animations_do_not_change_the_canvas
+        anm2_geometry.skipped_sections_leave_the_animation_intact
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)
