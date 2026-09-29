@@ -77,6 +77,57 @@ add_game_plugin(ANM2
 )
 target_link_libraries(ANM2 PRIVATE Qt6::Widgets)
 
+# ANM2 geometry tests. Only when the host asks for its test suite, so a
+# standalone plugin build pulls in no test-only code. The renderer sources are
+# compiled again into the test binary rather than linked from the module: a
+# MODULE library has no linkable import library on every platform, and the
+# point is to exercise the sources directly.
+if(GMM_BUILD_TESTS)
+    set(ANM2_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/FileSupport/ANM2")
+    add_executable(test_anm2_renderer
+        tests/ANM2/test_anm2_renderer.cpp
+        ${ANM2_SRC_DIR}/anm2_parser.cpp
+        ${ANM2_SRC_DIR}/anm2_renderer.cpp
+    )
+    target_include_directories(test_anm2_renderer PRIVATE
+        ${ABI_INCLUDE_DIR}
+        ${ANM2_SRC_DIR}
+    )
+    target_link_libraries(test_anm2_renderer PRIVATE Qt6::Widgets)
+
+    # One CTest entry per case, so a failure names itself and
+    # `ctest -R <case>` runs just that one.
+    foreach(case
+            scale_applied_once
+            scale_composes_with_crop_once
+            negative_scale_mirrors
+            pivot_at_centre_does_not_move
+            pivot_controls_layer_placement
+            pivot_reorder_negative_control
+            bounds_match_draw
+            negative_tint_offset_applies
+            tint_offset_clamps_to_channel_range
+            tint_offset_applies_to_untouched_tint
+            placeholder_path_scales_once
+            parser_scale_attribute_defaults)
+        add_test(NAME anm2_geometry.${case}
+                 COMMAND test_anm2_renderer ${case})
+    endforeach()
+    set_tests_properties(anm2_geometry.scale_applied_once
+        anm2_geometry.scale_composes_with_crop_once
+        anm2_geometry.negative_scale_mirrors
+        anm2_geometry.pivot_at_centre_does_not_move
+        anm2_geometry.pivot_controls_layer_placement
+        anm2_geometry.pivot_reorder_negative_control
+        anm2_geometry.bounds_match_draw
+        anm2_geometry.negative_tint_offset_applies
+        anm2_geometry.tint_offset_clamps_to_channel_range
+        anm2_geometry.tint_offset_applies_to_untouched_tint
+        anm2_geometry.placeholder_path_scales_once
+        anm2_geometry.parser_scale_attribute_defaults
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)

@@ -70,9 +70,12 @@ static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   f.height     = attrs.value("Height").toInt();
   f.x_scale    = attrs.value("XScale").toInt();
   f.y_scale    = attrs.value("YScale").toInt();
-  if (f.x_scale == 0)
+  /* Only supply the spec default when the attribute is absent. Testing the
+   * parsed value instead would also overwrite a deliberate XScale="0", which
+   * real files do use. */
+  if (!attrs.hasAttribute("XScale"))
     f.x_scale = 100;
-  if (f.y_scale == 0)
+  if (!attrs.hasAttribute("YScale"))
     f.y_scale = 100;
   f.delay = attrs.value("Delay").toInt();
   if (f.delay <= 0)
@@ -97,7 +100,6 @@ static Anm2Frame parseFrame(QXmlStreamReader &xml) {
   f.interpolation = parseInterpolation(attrs.value("Interpolated").toString());
   return f;
 }
-
 /* --------------------------------------------------------------------------
  * Parse
  * full .anm2 XML
