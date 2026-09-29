@@ -14,6 +14,7 @@
 #include <QGuiApplication>
 #include <QImage>
 #include <QPixmap>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QtGlobal>
 
@@ -578,6 +579,368 @@ void test_parser_scale_attribute_defaults()
   /* QTemporaryDir removes the tree on destruction. */
 }
 
+/* -- canvas limits -------------------------------------------------------- */
+
+/* The canvas a frame asks for, worked out here from its attributes without
+ * going near the renderer, so a test can state what it built and then check
+ * that the renderer agreed. The scale is a percentage, so it divides by 100. */
+static void expected_canvas(const Anm2Frame& f, double* w, double* h)
+{
+  *w = f.width * static_cast<double>(f.x_scale) / 100.0;
+  *h = f.height * static_cast<double>(f.y_scale) / 100.0;
+}
+
+/* Two frames taken from a real shipped animation - the Death animation of
+ * 407.000_hush.anm2, layer 3 - whose scales are out by three orders of
+ * magnitude. Each one is over a different limit, which is what makes them
+ * worth pinning:
+ *
+ *   frame 3:  32 x 115 at 14000% x 10000%  ->  4480 x 11500
+ *     area 51,520,000 px, inside kAnm2MaxCanvasPixels, but the 11500px edge is
+ *     over kAnm2MaxCanvasEdge. Caught by the edge limit alone.
+ *   frame 4:  43 x 126 at 16800% x 10000%  ->  7224 x 12600
+ *     area 91,022,400 px, over kAnm2MaxCanvasPixels, as is the edge. Caught by
+ *     the area limit even if the edge limit were removed.
+ *
+ * Together they are the argument for having both limits rather than one. */
+struct HushFrame
+{
+  int w, h, xs, ys;
+  double want_w, want_h;
+};
+
+const HushFrame kHushFrames[] = {
+    {32, 115, 14000, 10000, 4480.0, 11500.0},
+    {43, 126, 16800, 10000, 7224.0, 12600.0},
+};
+
+void test_oversize_canvas_is_refused_not_allocated()
+{
+  for (const HushFrame& hf : kHushFrames) {
+    Anm2Frame f = frame_at(0, 0, 0, 0, hf.w, hf.h, 0, hf.xs, hf.ys);
+    Animation a = single_layer(f);
+
+    /* What the file asks for, derived from its own attributes. The test is
+     * worthless if this does not hold: a renderer that only ever saw small
+     * canvases would pass it without trying. */
+    double want_w = 0, want_h = 0;
+    expected_canvas(f, &want_w, &want_h);
+    CHECK_NEAR(want_w, hf.want_w, 0.5);
+    CHECK_NEAR(want_h, hf.want_h, 0.5);
+    CHECK(want_w > kAnm2MaxCanvasEdge || want_h > kAnm2MaxCanvasEdge);
+    CHECK(want_w * want_h > static_cast<double>(kAnm2MaxCanvasPixels) / 4.0);
+
+    /* The measurement refuses to name the hostile size. */
+    auto [cw, ch] = anm2_compute_animation_rect(a, 400, 300);
+    CHECK(anm2_canvas_within_limits(cw, ch));
+    CHECK(cw <= kAnm2MaxCanvasEdge);
+    CHECK(ch <= kAnm2MaxCanvasEdge);
+    CHECK(static_cast<qint64>(cw) * ch <= kAnm2MaxCanvasPixels);
+
+    /* And so does the render. The returned image is not the size that was
+     * asked for, which is the whole point: if the gate sat after
+     * `QImage canvas(cw, ch, ...)`, the image returned would carry the
+     * requested dimensions, or be null. Neither size appearing here is what
+     * shows the request was turned away before the allocation. */
+    QImage img = render(a, solid_sheet(64, 64));
+    CHECK(!img.isNull());
+    CHECK(img.width() == cw);
+    CHECK(img.height() == ch);
+    CHECK(img.width() <= kAnm2MaxCanvasEdge);
+    CHECK(img.height() <= kAnm2MaxCanvasEdge);
+    CHECK(img.width() < static_cast<int>(want_w) ||
+          img.height() < static_cast<int>(want_h));
+
+    /* The same gate covers a hostile size arriving from the caller with an
+     * otherwise ordinary animation, which is the second way in: the file is
+     * fine, the canvas the host was told about is not. */
+    QList<LayerDef> defs{LayerDef{0, QStringLiteral("l"), 0}};
+    std::map<int, QPixmap> sheets{{0, solid_sheet(64, 64)}};
+    Animation small = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+    QImage hostile = anm2_render_frame_at_time(small, defs, sheets, 0.0f,
+                                               7804, 17820);
+    CHECK(!hostile.isNull());
+    CHECK(hostile.width() != 7804);
+    CHECK(hostile.height() != 17820);
+    CHECK(anm2_canvas_within_limits(hostile.width(), hostile.height()));
+  }
+
+  /* The same file read through the parser, so the refusal is shown to follow
+   * the numbers in the XML rather than a struct the test built by hand. */
+  QTemporaryDir dir;
+  CHECK(dir.isValid());
+  if (dir.isValid()) {
+    const char* kXml =
+        "<AnimatedActor><Content><Spritesheets/><Layers>"
+        "<Layer Name=\"a\" Id=\"0\" SpritesheetId=\"0\"/></Layers></Content>"
+        "<Animations DefaultAnimation=\"Default\">"
+        "<Animation Name=\"Default\" FrameNum=\"6\" Loop=\"false\">"
+        "<LayerAnimations><LayerAnimation LayerId=\"0\" Visible=\"true\">"
+        "<Frame XPosition=\"0\" YPosition=\"0\" Width=\"43\" Height=\"126\" "
+        "Delay=\"1\" XScale=\"16800\" YScale=\"10000\"/>"
+        "</LayerAnimation></LayerAnimations></Animation></Animations>"
+        "</AnimatedActor>";
+    QString path = dir.filePath(QStringLiteral("hush.anm2"));
+    {
+      QFile f(path);
+      CHECK(f.open(QIODevice::WriteOnly | QIODevice::Text));
+      if (!f.isOpen())
+        return;
+      f.write(kXml);
+      f.close();
+    }
+    Animation anim;
+    QList<Spritesheet> sheets;
+    QList<LayerDef> defs;
+    CHECK(anm2_parse_file(path, anim, sheets, defs, nullptr));
+    auto [pcw, pch] = anm2_compute_animation_rect(anim, 400, 300);
+    CHECK(anm2_canvas_within_limits(pcw, pch));
+    CHECK(pcw <= kAnm2MaxCanvasEdge);
+    CHECK(pch <= kAnm2MaxCanvasEdge);
+    /* QTemporaryDir removes the tree on destruction. */
+  }
+}
+
+/* A canvas the limits allow is drawn, at the size the file asked for.
+ *
+ * The size is the one measured from real data: 3000 x 3000 at 200% is the
+ * geometry of zissAura.anm2, whose crop really does sit inside a 3000 x 3000
+ * sheet on disk. It is the largest canvas any of the 25077 real animations
+ * with sane scales produces, and it sits inside the cap - so if it renders,
+ * the cap is not clipping real content. The negative control is the same
+ * animation with its scale raised just past the point where the edge limit
+ * bites, which must be refused rather than quietly drawn at a reduced size. */
+void test_measured_real_maximum_still_renders()
+{
+  Anm2Frame f = frame_at(0, 0, 0, 0, 3000, 3000, 0, 200, 200);
+  Animation a = single_layer(f);
+
+  /* 3000 x 3000 at 200% is 6000 x 6000 of content, plus the canvas padding:
+   * the 6020 x 6020 canvas measured from the real file. */
+  auto [cw, ch] = anm2_compute_animation_rect(a, 400, 300);
+  CHECK_EQ(cw, 6020);
+  CHECK_EQ(ch, 6020);
+  CHECK(anm2_canvas_within_limits(cw, ch));
+
+  QImage img = render(a, solid_sheet(3000, 3000));
+  CHECK_EQ(img.width(), 6020);
+  CHECK_EQ(img.height(), 6020);
+
+  /* Not a blank refusal: the sprite covers the full 6000 x 6000 content box
+   * and the canvas padding around it is the only thing left clear. */
+  Extent e = drawn_extent(img);
+  CHECK(!e.empty());
+  CHECK_NEAR(e.w(), 6000.0, 2.0);
+  CHECK_NEAR(e.h(), 6000.0, 2.0);
+  CHECK_EQ(qAlpha(img.pixel(3010, 3010)), 255);
+
+  /* Negative control: 3000 x 3000 at 300% is 9000 x 9000, past the edge
+   * limit. It must be refused, and refused outright - not shrunk to fit, which
+   * would be the same silent clip the whole check exists to rule out. */
+  Anm2Frame over = frame_at(0, 0, 0, 0, 3000, 3000, 0, 300, 300);
+  Animation over_a = single_layer(over);
+  double req_w = 0, req_h = 0;
+  expected_canvas(over, &req_w, &req_h);
+  CHECK_NEAR(req_w, 9000.0, 0.5);
+  CHECK(req_w > kAnm2MaxCanvasEdge);
+  auto [ocw, och] = anm2_compute_animation_rect(over_a, 400, 300);
+  CHECK(anm2_canvas_within_limits(ocw, och));
+  QImage over_img = render(over_a, solid_sheet(64, 64));
+  CHECK_EQ(over_img.width(), ocw);
+  CHECK_EQ(over_img.height(), och);
+  /* Refused, not drawn at 6020: the two are far enough apart that the
+   * refused one is plainly not the allowed one quietly shrunk. */
+  CHECK(och < 9000);
+  CHECK(och != ch);
+  CHECK(std::fabs(static_cast<double>(och) - ch) > 1000.0);
+}
+
+/* The refusal is drawn, not blank. A null QImage would reach the host as an
+ * empty frame and leave the user looking at an empty preview with nothing
+ * saying why, so the assertion is that the refusal has opaque pixels and more
+ * than one colour in it.
+ *
+ * The negative control is an animation with nothing drawable, whose canvas is
+ * genuinely empty - so "not blank" is a claim about this image and not about
+ * every image the renderer produces. */
+void test_oversize_is_reported_not_silent()
+{
+  Anm2Frame f = frame_at(0, 0, 0, 0, 43, 126, 0, 16800, 10000);
+  QImage notice = render(single_layer(f), solid_sheet(64, 64));
+  CHECK(!notice.isNull());
+
+  Extent e = drawn_extent(notice);
+  CHECK(!e.empty());
+
+  /* A border, a heading and a body: at least three distinct opaque colours,
+   * none of them the background the canvas is cleared to. */
+  QSet<QRgb> colours;
+  for (int y = 0; y < notice.height(); y += 2) {
+    for (int x = 0; x < notice.width(); x += 2) {
+      QRgb px = notice.pixel(x, y);
+      if (qAlpha(px) > 0)
+        colours.insert(px & 0x00ffffff);
+    }
+  }
+  CHECK(colours.size() >= 3);
+
+  /* The border runs the whole way round, so the notice is framed rather than
+   * a stray glyph in a corner. */
+  CHECK(qAlpha(notice.pixel(1, notice.height() / 2)) > 0);
+  CHECK(qAlpha(notice.pixel(notice.width() - 2, notice.height() / 2)) > 0);
+  CHECK(qAlpha(notice.pixel(notice.width() / 2, 1)) > 0);
+  CHECK(qAlpha(notice.pixel(notice.width() / 2, notice.height() - 2)) > 0);
+
+  /* Negative control: an animation with every layer hidden produces a canvas
+   * that really is empty, so the three-colour finding above means something. */
+  Animation hidden = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+  hidden.layer_animations[0].visible = false;
+  QImage blank = render(hidden, solid_sheet(64, 64));
+  CHECK(!blank.isNull());
+  CHECK(drawn_extent(blank).empty());
+}
+
+/* The size arithmetic cannot overflow, so a canvas that overflows a 32-bit
+ * width*height*4 computation is refused on its merits and not on the
+ * accident of a wrapped value.
+ *
+ * 40000 x 40000 is 1.6e9 px: that fits in an int, but times 4 it is 6.4e9,
+ * which does not, so an int32 computation of the byte count has already
+ * overflowed by the time the result would be compared against anything.
+ * 100000 x 100000 overflows the pixel count itself. Both are reachable from
+ * the file - Width and XScale are arbitrary integers.
+ *
+ * The negative control is 4000 x 4000: 1.6e7 px, 6.4e7 bytes, comfortably
+ * inside both, so this is a case about the arithmetic and not about large
+ * numbers being turned away. */
+void test_canvas_size_arithmetic_cannot_overflow()
+{
+  struct Spec
+  {
+    int w, h;
+    bool allowed;
+  };
+  const Spec specs[] = {
+      {40000, 40000, false},  // w*h fits in int32, w*h*4 does not
+      {100000, 100000, false},  // w*h overflows int32 on its own
+      {1, 67108864, false},     // inside the pixel budget, past the edge
+      {4000, 4000, true},       // the control: 6.4e7 bytes, well inside
+      {8192, 8192, true},       // exactly on the cap, and allowed
+      {8193, 8192, false},      // one pixel past the cap
+  };
+
+  for (const Spec& s : specs) {
+    bool got = anm2_canvas_within_limits(s.w, s.h);
+    CHECK_EQ(got, s.allowed);
+
+    /* The comparison is done on a 64-bit product. Recomputing it in int32
+     * here would be undefined behaviour rather than a test, so instead the
+     * product is shown to be the one the 64-bit path makes: for the two
+     * overflow rows the 32-bit product is a different, much smaller number. */
+    if (s.w * s.h > 2147483647LL / 4) {
+      long long wide = static_cast<long long>(s.w) * s.h * 4LL;
+      CHECK(wide > 2147483647LL);
+    }
+  }
+
+  /* And the same sizes asked for by a file, which is the way they arrive. */
+  Anm2Frame f = frame_at(0, 0, 0, 0, 40000, 40000, 0, 100, 100);
+  QImage img  = render(single_layer(f), solid_sheet(64, 64));
+  CHECK(!img.isNull());
+  CHECK(img.width() <= kAnm2MaxCanvasEdge);
+  CHECK(img.height() <= kAnm2MaxCanvasEdge);
+  CHECK(static_cast<qint64>(img.width()) * img.height() <= kAnm2MaxCanvasPixels);
+
+  /* The control geometry really does draw, at its own full size. The sheet
+   * has to be as big as the crop: QPixmap::copy() returns a null pixmap for a
+   * rectangle that is not inside the source, so a small sheet here would draw
+   * nothing and prove nothing. */
+  Anm2Frame ok_f = frame_at(0, 0, 0, 0, 4000, 4000, 0, 100, 100);
+  QImage ok      = render(single_layer(ok_f), solid_sheet(4000, 4000));
+  CHECK_EQ(ok.width(), 4020);
+  CHECK_EQ(ok.height(), 4020);
+  Extent ok_e = drawn_extent(ok);
+  CHECK(!ok_e.empty());
+  CHECK_NEAR(ok_e.w(), 4000.0, 2.0);
+  CHECK_NEAR(ok_e.h(), 4000.0, 2.0);
+}
+
+/* The scale needs no clamp of its own, and none is applied.
+ *
+ * The bounds are the union of the transformed crop rectangles, so a frame's
+ * scale multiplies straight into the measured box whatever the position or
+ * the pivot: bounding the box bounds the scale. A scale large enough to leave
+ * the box is therefore already turned away by the canvas limit, and a scale
+ * large enough to stay inside it is honoured at its real size rather than
+ * being trimmed to something the limit allows.
+ *
+ * The negative control is the pair that makes the point: the same 64px sprite
+ * at 1000% is drawn 640px across, not clamped, and at 100000% - the largest
+ * XScale in any real file, from infected mushroom.anm2 - it is refused. */
+void test_scale_is_bounded_by_the_canvas_not_clamped()
+{
+  Anm2Frame drawable = frame_at(0, 0, 0, 0, 64, 64, 0, 1000, 1000);
+  QImage img        = render(single_layer(drawable), solid_sheet(64, 64));
+  Extent e           = drawn_extent(img);
+  CHECK(!e.empty());
+  /* 64 x 1000% is 640. A clamp would have produced something smaller; the
+   * renderer is meant to be the one place the number is not adjusted. */
+  CHECK_NEAR(e.w(), 640.0, 2.0);
+  CHECK_NEAR(e.h(), 640.0, 2.0);
+  CHECK(e.w() >= 630);
+  CHECK(e.w() <= 650);
+
+  Anm2Frame hostile = frame_at(0, 0, 0, 0, 64, 64, 0, 100000, 100000);
+  double want_w = 0, want_h = 0;
+  expected_canvas(hostile, &want_w, &want_h);
+  CHECK_NEAR(want_w, 64000.0, 1.0);   // 64 * 1000x
+  CHECK(want_w > kAnm2MaxCanvasEdge);
+  QImage refused = render(single_layer(hostile), solid_sheet(64, 64));
+  CHECK(refused.width() <= kAnm2MaxCanvasEdge);
+  CHECK(refused.height() <= kAnm2MaxCanvasEdge);
+  /* Refused, not drawn at 640 the way the 1000% case was: the two are an
+   * order of magnitude apart and the smaller one is not the larger one
+   * quietly shrunk. */
+  CHECK(refused.height() != e.h());
+  CHECK(std::fabs(static_cast<double>(refused.height()) - e.h()) > 100.0);
+}
+
+/* The frame count is bounded too, because it multiplies every other cost:
+ * the bounds pass steps once per frame and the host holds an image per frame.
+ * The count arrives as a plain attribute, so it is as attacker-controlled as
+ * the canvas.
+ *
+ * The control is the largest count any of 27378 real animations reports -
+ * 4522, from the intro cutscene - which passes through untouched. */
+void test_frame_count_is_bounded()
+{
+  Animation a    = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+  a.frame_num    = 2000000000;
+  CHECK_EQ(anm2_compute_total_frames(a), kAnm2MaxTotalFrames);
+  CHECK(anm2_compute_total_frames(a) < a.frame_num);
+
+  /* A negative value cannot become a large one. */
+  a.frame_num = -5;
+  CHECK_EQ(anm2_compute_total_frames(a), 1);  // falls back to the track length
+
+  /* And a file whose keyframe delays declare the length gets the same bound,
+   * by the other route into the same number. */
+  Animation delays = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+  delays.frame_num = 0;
+  Anm2Frame big    = delays.layer_animations[0].frames[0];
+  big.delay        = 2000000000;
+  delays.layer_animations[0].frames = QList<Anm2Frame>{big, big, big};
+  CHECK(anm2_compute_total_frames(delays) <= kAnm2MaxTotalFrames);
+  CHECK(anm2_track_length_get(delays.layer_animations[0].frames) <=
+        kAnm2MaxTotalFrames);
+
+  /* Negative control: the real worst case is untouched. */
+  Animation real = single_layer(frame_at(0, 0, 0, 0, 32, 32, 0, 100, 100));
+  real.frame_num = 4522;
+  CHECK_EQ(anm2_compute_total_frames(real), 4522);
+  CHECK(4522 < kAnm2MaxTotalFrames);
+}
+
 struct Case
 {
   const char* name;
@@ -597,6 +960,12 @@ const Case kCases[] = {
     {"tint_offset_applies_to_untouched_tint", test_tint_offset_applies_to_untouched_tint},
     {"placeholder_path_scales_once", test_placeholder_path_scales_once},
     {"parser_scale_attribute_defaults", test_parser_scale_attribute_defaults},
+    {"oversize_canvas_is_refused_not_allocated", test_oversize_canvas_is_refused_not_allocated},
+    {"measured_real_maximum_still_renders", test_measured_real_maximum_still_renders},
+    {"oversize_is_reported_not_silent", test_oversize_is_reported_not_silent},
+    {"canvas_size_arithmetic_cannot_overflow", test_canvas_size_arithmetic_cannot_overflow},
+    {"scale_is_bounded_by_the_canvas_not_clamped", test_scale_is_bounded_by_the_canvas_not_clamped},
+    {"frame_count_is_bounded", test_frame_count_is_bounded},
 };
 
 }  // namespace

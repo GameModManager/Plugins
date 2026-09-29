@@ -109,7 +109,13 @@ if(GMM_BUILD_TESTS)
             tint_offset_clamps_to_channel_range
             tint_offset_applies_to_untouched_tint
             placeholder_path_scales_once
-            parser_scale_attribute_defaults)
+            parser_scale_attribute_defaults
+            oversize_canvas_is_refused_not_allocated
+            measured_real_maximum_still_renders
+            oversize_is_reported_not_silent
+            canvas_size_arithmetic_cannot_overflow
+            scale_is_bounded_by_the_canvas_not_clamped
+            frame_count_is_bounded)
         add_test(NAME anm2_geometry.${case}
                  COMMAND test_anm2_renderer ${case})
     endforeach()
@@ -125,6 +131,12 @@ if(GMM_BUILD_TESTS)
         anm2_geometry.tint_offset_applies_to_untouched_tint
         anm2_geometry.placeholder_path_scales_once
         anm2_geometry.parser_scale_attribute_defaults
+        anm2_geometry.oversize_canvas_is_refused_not_allocated
+        anm2_geometry.measured_real_maximum_still_renders
+        anm2_geometry.oversize_is_reported_not_silent
+        anm2_geometry.canvas_size_arithmetic_cannot_overflow
+        anm2_geometry.scale_is_bounded_by_the_canvas_not_clamped
+        anm2_geometry.frame_count_is_bounded
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 

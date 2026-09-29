@@ -12,15 +12,88 @@
 
 #include "anm2_renderer.h"
 
+#include <QColor>
+#include <QFont>
 #include <QPainter>
 #include <QPixmap>
+#include <QPen>
 #include <QPointF>
+#include <QRect>
 #include <QRectF>
 #include <QTransform>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+
+/* --------------------------------------------------------------------------
+ *
+ * Canvas limits
+ *
+ * ------------------------------------------------------------------------ */
+
+bool anm2_canvas_within_limits(int w, int h) {
+  if (w <= 0 || h <= 0)
+    return false;
+  if (w > kAnm2MaxCanvasEdge || h > kAnm2MaxCanvasEdge)
+    return false;
+  return static_cast<qint64>(w) * static_cast<qint64>(h) <= kAnm2MaxCanvasPixels;
+}
+
+/* Whether a content box of this span still fits once the canvas padding has
+ * been added around it. Same rule as anm2_canvas_within_limits(), written
+ * against a double span because that is what the bounds pass accumulates.
+ *
+ * No overflow is possible here: the span is a product of int32 attributes
+ * evaluated in double, so it peaks around 2^62 and the square around 2^124,
+ * both far inside the range a double holds. The value that could not survive
+ * is the conversion to int in anm2_compute_animation_rect(), and the early
+ * exit below is what keeps that conversion from ever running. */
+static bool anm2_span_within_limits(double span_x, double span_y) {
+  const double w = span_x + 2.0 * kAnm2CanvasPad;
+  const double h = span_y + 2.0 * kAnm2CanvasPad;
+  if (w > static_cast<double>(kAnm2MaxCanvasEdge) ||
+      h > static_cast<double>(kAnm2MaxCanvasEdge))
+    return false;
+  return w * h <= static_cast<double>(kAnm2MaxCanvasPixels);
+}
+
+/* Fixed size of the refusal image. Constant, not derived from the refused
+ * request, so it cannot itself be made to grow. */
+inline constexpr int kNoticeW = 480;
+inline constexpr int kNoticeH = 160;
+
+QImage anm2_oversize_notice() {
+  QImage img(kNoticeW, kNoticeH, QImage::Format_RGBA8888);
+  img.fill(Qt::transparent);
+
+  QPainter p(&img);
+  p.setRenderHint(QPainter::Antialiasing, true);
+
+  const QRect box(0, 0, kNoticeW, kNoticeH);
+  p.setPen(QPen(QColor(150, 60, 60), 2));
+  p.drawRect(box.adjusted(1, 1, -2, -2));
+
+  QFont title = p.font();
+  title.setBold(true);
+  title.setPointSizeF(title.pointSizeF() * 1.25);
+  p.setFont(title);
+  p.setPen(QColor(220, 120, 120));
+  p.drawText(box.adjusted(16, 14, -16, 0), Qt::AlignHCenter | Qt::AlignTop,
+             QStringLiteral("Animation not rendered"));
+
+  p.setFont(QFont());
+  p.setPen(QColor(200, 200, 200));
+  p.drawText(box.adjusted(16, 58, -16, 0),
+             Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
+             QStringLiteral("It asks for a canvas beyond %1 x %2 pixels. "
+                            "No game asset does.")
+                 .arg(kAnm2MaxCanvasEdge)
+                 .arg(kAnm2MaxCanvasEdge));
+
+  p.end();
+  return img;
+}
 
 /* --------------------------------------------------------------------------
  * Easing
@@ -52,11 +125,14 @@ static float interpolation_factor(Interpolation interpolation, float value) {
  * ------------------------------------------------------------------------ */
 
 int anm2_track_length_get(const QList<Anm2Frame> &keyframes) {
-  int length = 0;
+  /* Saturating rather than wrapping: a file whose delays add up past INT_MAX
+   * would otherwise wrap to a negative length and land back in the caller as
+   * a plausible small animation. */
+  int64_t length = 0;
   for (const auto &frame : keyframes)
     if (frame.delay > 0)
       length += frame.delay;
-  return length;
+  return static_cast<int>(std::min<int64_t>(length, kAnm2MaxTotalFrames));
 }
 
 /* --------------------------------------------------------------------------
@@ -187,15 +263,28 @@ static void anm2_crop_size(const Anm2Frame &f, int *w, int *h) {
   *h = f.height > 0 ? f.height : 64;
 }
 
+/* What measuring the animation's content came to. */
+enum class Anm2Bounds {
+  Ok,      /* a content box was measured */
+  Empty,   /* nothing in the file is drawable */
+  TooLarge /* the file asks for more canvas than the limits allow */
+};
+
 /* Union of every visible layer's transformed sprite rectangle over the whole
  * animation. Both the canvas size and the draw origin come from this, so they
- * cannot drift apart. Returns false when nothing is drawable. */
-static bool anm2_content_bounds(const Animation &a, QRectF *out) {
+ * cannot drift apart.
+ *
+ * Stops as soon as the box it is accumulating outgrows the limits, so a file
+ * asking for a canvas of billions of pixels costs the same as one asking for
+ * a few thousand: the loop runs until the box is too big, not to the end of
+ * the animation. Nothing is allocated from the result on that path, and the
+ * rect is left untouched. */
+static Anm2Bounds anm2_content_bounds(const Animation &a, QRectF *out) {
   constexpr int CORNERS[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
 
   int total = anm2_compute_total_frames(a);
   if (total <= 0)
-    return false;
+    return Anm2Bounds::Empty;
 
   double min_x = 1e30, min_y = 1e30, max_x = -1e30, max_y = -1e30;
   bool any = false;
@@ -229,12 +318,17 @@ static bool anm2_content_bounds(const Animation &a, QRectF *out) {
         any           = true;
       }
     }
+
+    /* The box only ever grows, so one check per time step is enough to catch
+     * it, and a hostile file is out of the loop on its first step. */
+    if (any && !anm2_span_within_limits(max_x - min_x, max_y - min_y))
+      return Anm2Bounds::TooLarge;
   }
 
   if (!any)
-    return false;
+    return Anm2Bounds::Empty;
   *out = QRectF(QPointF(min_x, min_y), QPointF(max_x, max_y));
-  return true;
+  return Anm2Bounds::Ok;
 }
 
 /* --------------------------------------------------------------------------
@@ -255,6 +349,7 @@ int anm2_compute_total_frames(const Animation &a) {
     total = max_layer_frames;
   return total;
 }
+
 /* --------------------------------------------------------------------------
  * Compute
  * fixed canvas size across all frames using interpolated keyframes.
@@ -270,14 +365,21 @@ int anm2_compute_total_frames(const Animation &a) {
 std::pair<int, int> anm2_compute_animation_rect(const Animation &a, int default_w,
                                                 int default_h) {
   QRectF bounds;
-  if (!anm2_content_bounds(a, &bounds))
+  Anm2Bounds measured = anm2_content_bounds(a, &bounds);
+  if (measured == Anm2Bounds::TooLarge)
+    return {kNoticeW, kNoticeH};
+  if (measured == Anm2Bounds::Empty)
     return {default_w, default_h};
 
-  int pad = 10;
-  int w   = std::max(1, static_cast<int>(bounds.right() - bounds.left()) + pad * 2);
-  int h   = std::max(1, static_cast<int>(bounds.bottom() - bounds.top()) + pad * 2);
+  /* The span is known to be inside the limits, so both of these fit in an int
+   * and the conversion is exact. */
+  int w = std::max(1, static_cast<int>(bounds.right() - bounds.left()) +
+                          kAnm2CanvasPad * 2);
+  int h = std::max(1, static_cast<int>(bounds.bottom() - bounds.top()) +
+                          kAnm2CanvasPad * 2);
   return {w, h};
 }
+
 /* --------------------------------------------------------------------------
  * Render
  * a single animation frame to QImage using on-demand interpolation.
@@ -289,6 +391,18 @@ std::pair<int, int> anm2_compute_animation_rect(const Animation &a, int default_
 QImage anm2_render_frame_at_time(const Animation &a, const QList<LayerDef> &layer_defs,
                                  std::map<int, QPixmap> &sheet_by_id, float time,
                                  int cw, int ch) {
+  /* The gate sits ahead of the QImage constructor, so a canvas the file asks
+   * for but the limits refuse is never allocated. Two ways in: the animation
+   * measures past the limits, or the caller handed over a size that does. The
+   * first is what a hostile .anm2 looks like; the second catches a stale size
+   * arriving from the host. Either way the answer is the same refusal image,
+   * and its size is what anm2_compute_animation_rect() reported, so the canvas
+   * the host allocated around these pixels fits them exactly. */
+  QRectF bounds;
+  Anm2Bounds measured = anm2_content_bounds(a, &bounds);
+  if (measured == Anm2Bounds::TooLarge || !anm2_canvas_within_limits(cw, ch))
+    return anm2_oversize_notice();
+
   QImage canvas(cw, ch, QImage::Format_RGBA8888);
   canvas.fill(Qt::transparent);
   QPainter p(&canvas);
@@ -298,8 +412,7 @@ QImage anm2_render_frame_at_time(const Animation &a, const QList<LayerDef> &laye
   /* Same bounds the canvas was sized from, so the origin that shifts the
    * content to 0,0 and the padding that reserves room around it describe the
    * same rectangle. */
-  QRectF bounds;
-  bool has_bounds = anm2_content_bounds(a, &bounds);
+  bool has_bounds = (measured == Anm2Bounds::Ok);
   int origin_x    = has_bounds ? -qFloor(bounds.left()) : 0;
   int origin_y    = has_bounds ? -qFloor(bounds.top()) : 0;
 
