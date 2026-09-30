@@ -296,7 +296,9 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *raw) {
       .hook("conflict_extensions", CONFLICT_EXTENSIONS)
       .hook("ignored_files", IGNORED_FILES)
       .hook("disable_mechanism", DISABLE_MECHANISM)
-      .hook("delayed_disable", "true")
+      // No delayed_disable: the sentinel is written into the mod folder the
+      // moment the row is toggled, so disable.it always matches the row and a
+      // tick that appears to do nothing is impossible.
       .hook("metadata_file", METADATA_FILE)
       .hook("metadata_name_tag", METADATA_NAME_TAG)
       .hook("metadata_version_tag", METADATA_VERSION_TAG)
