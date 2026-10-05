@@ -18,7 +18,7 @@
 
 #include "gmm_abi_v2.h"
 
-#include "core/events/event_bus.h"
+#include "events/event_bus.h"
 
 #include <QAbstractItemView>
 #include <QDateTime>
