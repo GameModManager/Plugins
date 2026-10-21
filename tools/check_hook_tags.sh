@@ -19,13 +19,17 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE_CPP="${SCRIPT_DIR}/../template/game/GameTemplate.cpp"
+# The hook tags live in the BasicGame base class (the descriptor-driven
+# chain) plus any the template example adds via extra().
+TEMPLATE_FILES="${SCRIPT_DIR}/../src/shared/BasicGame/BasicGame.hpp ${SCRIPT_DIR}/../template/game/MyGame.cpp"
 CORE_SRC="${1:-$(cd "${SCRIPT_DIR}/../.." && pwd)/Core/src}"
 
-if [ ! -f "${TEMPLATE_CPP}" ]; then
-    echo "check_hook_tags: template not found: ${TEMPLATE_CPP}" >&2
-    exit 1
-fi
+for f in ${TEMPLATE_FILES}; do
+    if [ ! -f "${f}" ]; then
+        echo "check_hook_tags: template file not found: ${f}" >&2
+        exit 1
+    fi
+done
 if [ ! -d "${CORE_SRC}" ]; then
     echo "check_hook_tags: Core source dir not found: ${CORE_SRC}" >&2
     echo "  pass it explicitly: tools/check_hook_tags.sh /path/to/Core/src" >&2
@@ -33,12 +37,14 @@ if [ ! -d "${CORE_SRC}" ]; then
 fi
 
 # Every data hook tag the template registers (registration lines only;
-# commented-out examples are skipped by the leading-quote match).
-TAGS="$(grep -oE '\.hook\("[a-z_0-9]+"' "${TEMPLATE_CPP}" \
-        | sed 's/\.hook("//; s/"$//' | sort -u)"
+# commented-out examples are skipped by the leading-quote match). Two
+# call shapes: ctx.hook("tag", ...) and hook_if_set(ctx, "tag", ...).
+TAGS="$(cat ${TEMPLATE_FILES} \
+        | grep -oE '(\.hook\(|hook_if_set\(ctx, ?)"[a-z_0-9]+"' \
+        | sed 's/.*"\(.*\)"/\1/' | sort -u)"
 
 if [ -z "${TAGS}" ]; then
-    echo "check_hook_tags: no hook tags found in ${TEMPLATE_CPP}" >&2
+    echo "check_hook_tags: no hook tags found in ${TEMPLATE_FILES}" >&2
     exit 1
 fi
 

@@ -1,49 +1,71 @@
-# Game template - fill list
+# Game template - BasicGame
 
-`template/game/` is the checked-in skeleton a new game-support plugin author
-copies. Copy the whole directory to
-`src/plugins/GameSupport/<YourGame>/`, then work through the fill points
-(`template/game/README.md` is the per-file walkthrough; the .cpp files carry
-inline `FILL:` comments).
+A new game-support plugin is a small subclass of `gmm::BasicGame`
+(`src/shared/BasicGame/BasicGame.hpp`, header-only). The base class carries
+the entire registration - identity, plugin metadata, category, default
+tabs, and every common hook tag - with a documented default for every
+field. This mirrors MO2's `modorganizer-basic_games` `BasicGame`: the heavy
+interface is implemented once; a new game fills a descriptor and anything
+untouched rides the default.
 
-## REPLACE (author fills)
+## How to add a game
 
-- **game_id + CMake target name** - must be identical strings; Core defaults
-  an instance's game_id to the .so stem.
-- **steam_appid** (both the `game()` field and the `steam_appid` hook).
-- **exe names** per OS in `game()`.
-- **nexus_domain / gog_id / epic_namespace**.
-- **display_name, author, description** in `plugin()`.
-- **Tabs**: capabilities + data_path + descriptions.
-- **Hook values**: every `.hook()` value is a fill-or-delete decision. The
-  two hard ones: `game_native_plugins` (base-game filtering is a HARD
-  CONSTRAINT) and `steam_appid` (detection).
-- **Categories** (optional): uncomment the `.categories()` example and fill.
-- **wine.json**: packages your game needs under wine.
-- **Order-encoding writer** (optional): your game's real load-order format.
-- **SaveAdapterStub.cpp** (optional, off by default): fill
-  `parse_template()` with your real packet call, uncomment the
-  `.save_parser()` / `.save_overlay()` lines, add the file to
-  add_game_plugin. Delete it if your game needs no binary save parsing.
+1. Copy `template/game/MyGame.cpp` to
+   `src/plugins/GameSupport/<YourGame>/<YourGame>.cpp`.
+2. Rename the struct; fill the required fields; delete optional lines
+   whose defaults already fit. Every field's default is documented inline
+   in `BasicGame.hpp` next to the field.
+3. Add the CMake block (`template/cmake_lifecycle.md`). `add_game_plugin`
+   already puts `src/shared/BasicGame` on the include path.
+4. Copy `template/game/wine.json` next to your .cpp and fill it; add your
+   game id to the wine.json foreach in the repo `CMakeLists.txt`.
 
-## VERBATIM (leave as-is)
+## Required fields
 
-- The `gmm::Ctx` fluent chain structure and the `gmm_register_v2` /
-  `gmm_abi_version` entry points (including the null check).
-- `VERSION` in `plugin()` - the GMM_VERSION define from the build (Core's
-  project version). Never hardcode a version number.
-- `.category("Game Support")`.
-- The ABI adapter helpers in SaveAdapterStub.cpp (str_dup / dup_opt /
-  dup_str / fill_plugin_array / to_abi / parse_with).
-- The hook-tag SET: every tag in the template is verified live (Core reads
-  it; each comment cites the consumer). Do not add a tag without grepping
-  Core for a reader - `tools/check_hook_tags.sh` fails on tags Core does
-  not read. Dead tags (mod_counter_label, steam_app_name, game_versions,
-  auto_sort_groups) are excluded on purpose.
-- No `gmm_abi_features` export: omitting it is the safe v2.0 baseline.
+`game_id`, `display_name`, `game_binary`, `mods_subpath`. A subclass
+missing any of them is refused at load with a loud stderr message naming
+the field, and NOTHING is registered - a half-filled game can never
+half-load (the `basic_game.*` ctest cases cover this).
+
+`game_id` MUST equal the CMake target name (the .so stem): Core defaults
+an instance's game_id to the .so stem before register_game runs.
+
+## Defaults
+
+- `nexus_domain`: game_id lowercased. When it resolves, the default
+  Downloads tab is Nexus-wired (nxm protocol).
+- `exe_windows`: `game_binary`. `exe_linux`/`exe_macos`: null (Proton /
+  unsupported - the Skyrim pattern).
+- `description`: "Adds basic support for game <display_name>."
+- `author`: "GameModManager Team". `version`: always the VERSION build
+  define - never a hardcoded number.
+- `executables`: `game_binary`. `localappdata_folder` / `mygames_folder`:
+  `display_name`. `deploy_prefix`: `mods_subpath`.
+- An unset hook is OMITTED, never registered with a placeholder value: an
+  absent tag beats a dead one.
+
+## Rich-plugin extras (override virtuals)
+
+- `tabs()` - default: Mods + Downloads. Override to replace the pair
+  (Skyrim's five-tab layout).
+- `order_encoding()` - default: none. Override to write your load-order
+  file (Skyrim's plugins.txt writer, Isaac's metadata.xml writer).
+- `extra(Ctx&)` - tools, game variants, save parsers, categories,
+  workshop / loot / conflict / ignored-files hooks: anything with no
+  descriptor field. Called last. Real examples:
+  `SkyrimSpecialEdition.cpp` (tool + variants + save parser),
+  `TheBindingOfIsaacRebirth.cpp` (categories + workshop hooks). For a
+  binary save parser, copy the adapter pattern from
+  `SkyrimSESaveParser.cpp` (malloc'd GmmSaveDataV2, engine frees the
+  strings, no exceptions cross the ABI).
 
 ## Guard tests
 
-`template.instance_builds` + `template.hook_tags_drift` (ctest, test builds
-only) keep the template compiling and its tag table honest. See
-`cmake_lifecycle.md` for what your copy inherits.
+- `template.instance_builds` - the checked-in MyGame example compiles as a
+  real module in test builds and the .so is asserted (ABI churn
+  detection).
+- `template.hook_tags_drift` - greps Core for every hook tag BasicGame
+  registers; fails listing tags Core does not read. The dead tags
+  (mod_counter_label, steam_app_name, game_versions, auto_sort_groups)
+  are excluded on purpose.
+- `basic_game.*` - required-field refusal + defaults behavior.

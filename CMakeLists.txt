@@ -44,7 +44,12 @@ target_link_libraries(GMM_Gamebryo PUBLIC PkgConfig::ZLIB PkgConfig::LZ4)
 
 function(add_game_plugin NAME)
     add_library(${NAME} MODULE ${ARGN})
-    target_include_directories(${NAME} PRIVATE ${ABI_INCLUDE_DIR})
+    # src/shared/BasicGame carries the BasicGame base class every game
+    # plugin may build on (header-only; see template/README.md).
+    target_include_directories(${NAME} PRIVATE
+        ${ABI_INCLUDE_DIR}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shared/BasicGame"
+    )
     target_compile_definitions(${NAME} PRIVATE VERSION="${GMM_VERSION}")
     set_target_properties(${NAME} PROPERTIES
         PREFIX ""
@@ -151,25 +156,24 @@ if(GMM_BUILD_TESTS)
         anm2_geometry.skipped_sections_leave_the_animation_intact
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-    # -- Game template guard tests (template/) --
+    # -- Game template guard tests (template/ + src/shared/BasicGame) --
     # The template instance compiles the checked-in game template exactly
     # as a new author would, so the template stays TRUE after ABI churn.
-    # Test-only: a normal build never ships the dummy GameTemplate plugin.
-    add_game_plugin(GameTemplate
-        template/game/GameTemplate.cpp
-        template/game/SaveAdapterStub.cpp
+    # Test-only: a normal build never ships the dummy MyGame plugin.
+    add_game_plugin(MyGame
+        template/game/MyGame.cpp
     )
 
-    # instance_builds: the compile is enforced by the GameTemplate target
+    # instance_builds: the compile is enforced by the MyGame target
     # above; this ctest entry asserts the .so artifact exists so the full
     # suite catches a silently dropped or unlinked instance.
     add_test(NAME template.instance_builds
              COMMAND ${CMAKE_COMMAND}
-                     -DINSTANCE_SO=${CMAKE_BINARY_DIR}/plugins/GameTemplate.so
+                     -DINSTANCE_SO=${CMAKE_BINARY_DIR}/plugins/MyGame.so
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/template/verify_instance.cmake)
 
-    # hook_tags_drift: greps Core for every hook tag the template
-    # registers; fails listing tags Core does not read. ctest-only, not a
+    # hook_tags_drift: greps Core for every hook tag BasicGame registers;
+    # fails listing tags Core does not read. ctest-only, not a
     # per-build step. Needs the Core sources (standalone sibling layout);
     # skipped when Plugins is built without a Core sibling.
     if(CORE_ENGINE_DIR)
@@ -181,6 +185,27 @@ if(GMM_BUILD_TESTS)
                  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_hook_tags.sh
                          ${CORE_SRC_DIR})
     endif()
+
+    # -- BasicGame behavior tests (tests/BasicGame/) --
+    # Required-field refusal + defaults, against a recording stub ctx.
+    add_executable(test_basic_game
+        tests/BasicGame/test_basic_game.cpp
+    )
+    target_include_directories(test_basic_game PRIVATE
+        ${ABI_INCLUDE_DIR}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shared/BasicGame"
+    )
+    target_compile_definitions(test_basic_game PRIVATE VERSION="test")
+
+    foreach(case
+            missing_required_refuses
+            missing_required_names_first
+            defaults_apply
+            overrides_win
+            extra_hooks_run)
+        add_test(NAME basic_game.${case}
+                 COMMAND test_basic_game ${case})
+    endforeach()
 endif()
 
 # Isaac Mod Sorter - needs Core engine/sort headers + yaml-cpp
