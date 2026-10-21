@@ -83,6 +83,10 @@ target_link_libraries(ANM2 PRIVATE Qt6::Widgets)
 # MODULE library has no linkable import library on every platform, and the
 # point is to exercise the sources directly.
 if(GMM_BUILD_TESTS)
+    # Standalone builds need this themselves; as a Core submodule Core's
+    # top-level enable_testing() already covers us (idempotent).
+    enable_testing()
+
     set(ANM2_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/FileSupport/ANM2")
     add_executable(test_anm2_renderer
         tests/ANM2/test_anm2_renderer.cpp
@@ -146,9 +150,40 @@ if(GMM_BUILD_TESTS)
         anm2_geometry.null_animations_do_not_change_the_canvas
         anm2_geometry.skipped_sections_leave_the_animation_intact
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # -- Game template guard tests (template/) --
+    # The template instance compiles the checked-in game template exactly
+    # as a new author would, so the template stays TRUE after ABI churn.
+    # Test-only: a normal build never ships the dummy GameTemplate plugin.
+    add_game_plugin(GameTemplate
+        template/game/GameTemplate.cpp
+        template/game/SaveAdapterStub.cpp
+    )
+
+    # instance_builds: the compile is enforced by the GameTemplate target
+    # above; this ctest entry asserts the .so artifact exists so the full
+    # suite catches a silently dropped or unlinked instance.
+    add_test(NAME template.instance_builds
+             COMMAND ${CMAKE_COMMAND}
+                     -DINSTANCE_SO=${CMAKE_BINARY_DIR}/plugins/GameTemplate.so
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/template/verify_instance.cmake)
+
+    # hook_tags_drift: greps Core for every hook tag the template
+    # registers; fails listing tags Core does not read. ctest-only, not a
+    # per-build step. Needs the Core sources (standalone sibling layout);
+    # skipped when Plugins is built without a Core sibling.
+    if(CORE_ENGINE_DIR)
+        # CORE_ENGINE_DIR is Core/src/engine; the check wants all of
+        # Core/src (some consumers live outside engine/, e.g. app/core.cpp).
+        get_filename_component(CORE_SRC_DIR "${CORE_ENGINE_DIR}/../.."
+                               ABSOLUTE)
+        add_test(NAME template.hook_tags_drift
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_hook_tags.sh
+                         ${CORE_SRC_DIR})
+    endif()
 endif()
 
-# Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
+# Isaac Mod Sorter - needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)
 
@@ -168,10 +203,10 @@ set_target_properties(IsaacModSorter PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
 )
 
-# Event Bus Viewer — v2 IPluginTool plugin.
+# Event Bus Viewer - v2 IPluginTool plugin.
 # Shows a Qt dialog listing recent EventBus activity. It reaches the host's
 # EventBus singleton through the executable's exported symbols (gamemodmanager is
-# linked with -rdynamic), so it intentionally does NOT link the engine — linking
+# linked with -rdynamic), so it intentionally does NOT link the engine - linking
 # the static engine would create a second, empty EventBus inside the plugin.
 find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
