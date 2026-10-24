@@ -194,7 +194,15 @@ if(GMM_BUILD_TESTS)
         add_test(NAME template.hook_tags_drift
                  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_hook_tags.sh
                          ${CORE_SRC_DIR})
+        add_test(NAME template.capability_ids_drift
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_capability_ids.sh
+                         ${CORE_SRC_DIR}
+                         ${ABI_INCLUDE_DIR}/..)
     endif()
+
+    add_test(NAME template.method_ids_drift
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_method_ids.sh
+                     ${ABI_INCLUDE_DIR}/..)
 
     # -- BasicGame behavior tests (tests/BasicGame/) --
     # Required-field refusal + defaults, against a recording stub ctx.

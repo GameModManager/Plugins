@@ -1,0 +1,23 @@
+# Checked-in hook-tag vocabulary (v3 P6).
+# One tag per line. Lines starting with # are comments.
+case_sensitive
+deploy_include_mod_id
+deploy_prefix
+disable_mechanism
+download_sources
+executables
+game_icon_url
+game_native_plugins
+ini_file
+localappdata_folder
+masterlist_url
+metadata_file
+metadata_name_tag
+metadata_version_tag
+mods_subpath
+mod_valid_dirs
+mod_valid_exts
+mygames_folder
+save_extensions
+saves_subpath
+steam_appid

@@ -1,0 +1,15 @@
+# Checked-in method-id vocabulary (v3 P6).
+# One constant per line. Lines starting with # are comments.
+# Must match ABI's gmm_abi_v3.h enums and SDK thunk switches.
+GMM_SAVES_PARSE_FULL
+GMM_SAVES_PARSE_FAST
+GMM_OVERLAY_BUILD
+GMM_PREVIEW_CREATE
+GMM_ANIM_PARSE
+GMM_SORT_RUN
+GMM_TOOL_INVOKE
+GMM_STAGE_INSTALL
+GMM_VALIDATE_DIR
+GMM_EVENT_DELIVER
+GMM_DIAGNOSE_COLLECT
+GMM_ORDER_WRITE
