@@ -17,6 +17,15 @@ foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../ABI/include"
     endif()
 endforeach()
 
+foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../ABI/sdk/include"
+          "${CMAKE_CURRENT_SOURCE_DIR}/../../external/abi/sdk/include"
+          "${CMAKE_CURRENT_SOURCE_DIR}/../abi/sdk/include")
+    if(EXISTS "${p}")
+        set(ABI_SDK_INCLUDE_DIR "${p}")
+        break()
+    endif()
+endforeach()
+
 foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../Core/src/engine"
           "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
     if(EXISTS "${p}")
@@ -48,6 +57,7 @@ function(add_game_plugin NAME)
     # plugin may build on (header-only; see template/README.md).
     target_include_directories(${NAME} PRIVATE
         ${ABI_INCLUDE_DIR}
+        ${ABI_SDK_INCLUDE_DIR}
         "${CMAKE_CURRENT_SOURCE_DIR}/src/shared/BasicGame"
     )
     target_compile_definitions(${NAME} PRIVATE VERSION="${GMM_VERSION}")

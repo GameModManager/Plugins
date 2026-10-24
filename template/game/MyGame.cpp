@@ -1,8 +1,8 @@
 /**
- * MyGame - the whole base-game template.
+ * MyGame - the whole base-game template (v3 SDK shape).
  *
  * A new game-support plugin is this file: a small subclass of
- * gmm::BasicGame (src/shared/BasicGame/BasicGame.hpp). The base class
+ * gmm::BasicGame (gmm/basic_game.h, header-only SDK). The base class
  * carries the entire registration - identity, plugin metadata, category,
  * default tabs, and every common hook tag - with a documented default for
  * every field. Untouched fields ride the default; unset hooks are
@@ -11,49 +11,36 @@
  * HOW TO USE
  *
  * 1. Copy this file to src/plugins/GameSupport/<YourGame>/<YourGame>.cpp.
- * 2. Rename the struct; fill the required fields; delete optional lines
- *    whose defaults already fit. Every field's default is documented
- *    inline in BasicGame.hpp next to the field.
+ * 2. Rename the struct; fill the required fields (id, name, mods_dir);
+ *    delete optional lines whose defaults already fit. Every field's
+ *    default is documented inline in gmm/basic_game.h next to the field.
  * 3. Wire the CMake block from template/cmake_lifecycle.md
- *    (add_game_plugin already puts BasicGame.hpp on the include path).
+ *    (add_game_plugin already puts the SDK on the include path).
  * 4. Copy wine.json next to your .cpp and fill it; add your game id to
  *    the wine.json foreach in the repo CMakeLists.txt.
  *
- * REQUIRED fields (registration refuses + loud stderr error without
- * them): game_id, display_name, game_binary, mods_subpath.
+ * REQUIRED fields (compile error without them): id, name, mods_dir.
  *
- * OPTIONAL overrides (see BasicGame.hpp for the full contracts):
- * - tabs()           default: Mods + Downloads (Nexus-wired when
- *                    nexus_domain resolves). Override for a different
- *                    layout (Skyrim's five-tab layout).
- * - order_encoding() default: none. Override to write your load-order
- *                    file (Skyrim's plugins.txt writer, Isaac's
- *                    metadata.xml writer).
- * - extra(Ctx&)      tools, game variants, save parsers, categories,
- *                    workshop/loot/conflict hooks - anything with no
- *                    descriptor field. Real examples:
- *                    SkyrimSpecialEdition.cpp (tool + variants + save
- *                    parser), TheBindingOfIsaacRebirth.cpp (categories +
- *                    workshop hooks). For a binary save parser, copy the
- *                    adapter pattern from SkyrimSESaveParser.cpp.
+ * OPTIONAL overrides:
+ * - attach(World&)  default: none. Override to attach capability classes
+ *                   (save parsers, previews, tools, ...).
  */
 
-#include "BasicGame.hpp"
+#include "gmm/basic_game.h"
+
+#include <vector>
 
 struct MyGame : gmm::BasicGame {
-  MyGame() {
-    /* Required - registration refuses to run without these: */
-    game_id      = "MyGame"; /* MUST equal the CMake target name */
-    display_name = "My Game";
-    game_binary  = "mygame.exe"; /* main exe, relative to the game dir */
-    mods_subpath = "mods";       /* mod root, relative to the game dir */
+  /* Required - registration refuses to run without these: */
+  const char* id           = "MyGame"; /* MUST equal the CMake target name */
+  const char* name         = "My Game";
+  gmm::ByTarget<const char*> binary = {.windows = "mygame.exe"}; /* main exe */
+  const char* mods_dir     = "mods";    /* mod root, relative to game dir */
 
-    /* Optional - delete any line whose default already fits: */
-    steam_appid     = 0;         /* 0 = not on Steam */
-    nexus_domain    = "mygame";  /* default: lowercased game_id */
-    save_extensions = "sav";     /* default: omitted */
-    mygames_folder  = "My Game"; /* default: display_name */
-  }
+  /* Optional - delete any line whose default already fits: */
+  std::vector<uint32_t> steam_appids = {}; /* empty = not on Steam */
+  const char* nexus_domain = "mygame";     /* default: lowercased id */
+  gmm::Saves saves = {.extensions = {"sav"}}; /* default: omitted */
 };
 
-REGISTER_BASIC_GAME(MyGame)
+GMM_BASIC_GAME(MyGame)
