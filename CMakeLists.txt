@@ -17,6 +17,15 @@ foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../ABI/include"
     endif()
 endforeach()
 
+foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../ABI/sdk/include"
+          "${CMAKE_CURRENT_SOURCE_DIR}/../../external/abi/sdk/include"
+          "${CMAKE_CURRENT_SOURCE_DIR}/../abi/sdk/include")
+    if(EXISTS "${p}")
+        set(ABI_SDK_INCLUDE_DIR "${p}")
+        break()
+    endif()
+endforeach()
+
 foreach(p "${CMAKE_CURRENT_SOURCE_DIR}/../Core/src/engine"
           "${CMAKE_CURRENT_SOURCE_DIR}/../../src/engine")
     if(EXISTS "${p}")
@@ -44,7 +53,13 @@ target_link_libraries(GMM_Gamebryo PUBLIC PkgConfig::ZLIB PkgConfig::LZ4)
 
 function(add_game_plugin NAME)
     add_library(${NAME} MODULE ${ARGN})
-    target_include_directories(${NAME} PRIVATE ${ABI_INCLUDE_DIR})
+    # src/shared/BasicGame carries the BasicGame base class every game
+    # plugin may build on (header-only; see template/README.md).
+    target_include_directories(${NAME} PRIVATE
+        ${ABI_INCLUDE_DIR}
+        ${ABI_SDK_INCLUDE_DIR}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shared/BasicGame"
+    )
     target_compile_definitions(${NAME} PRIVATE VERSION="${GMM_VERSION}")
     set_target_properties(${NAME} PROPERTIES
         PREFIX ""
@@ -83,6 +98,10 @@ target_link_libraries(ANM2 PRIVATE Qt6::Widgets)
 # MODULE library has no linkable import library on every platform, and the
 # point is to exercise the sources directly.
 if(GMM_BUILD_TESTS)
+    # Standalone builds need this themselves; as a Core submodule Core's
+    # top-level enable_testing() already covers us (idempotent).
+    enable_testing()
+
     set(ANM2_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/FileSupport/ANM2")
     add_executable(test_anm2_renderer
         tests/ANM2/test_anm2_renderer.cpp
@@ -146,9 +165,60 @@ if(GMM_BUILD_TESTS)
         anm2_geometry.null_animations_do_not_change_the_canvas
         anm2_geometry.skipped_sections_leave_the_animation_intact
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # -- Game template guard tests (template/ + src/shared/BasicGame) --
+    # The template instance compiles the checked-in game template exactly
+    # as a new author would, so the template stays TRUE after ABI churn.
+    # Test-only: a normal build never ships the dummy MyGame plugin.
+    add_game_plugin(MyGame
+        template/game/MyGame.cpp
+    )
+
+    # instance_builds: the compile is enforced by the MyGame target
+    # above; this ctest entry asserts the .so artifact exists so the full
+    # suite catches a silently dropped or unlinked instance.
+    add_test(NAME template.instance_builds
+             COMMAND ${CMAKE_COMMAND}
+                     -DINSTANCE_SO=${CMAKE_BINARY_DIR}/plugins/MyGame.so
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/template/verify_instance.cmake)
+
+    # hook_tags_drift: greps Core for every hook tag BasicGame registers;
+    # fails listing tags Core does not read. ctest-only, not a
+    # per-build step. Needs the Core sources (standalone sibling layout);
+    # skipped when Plugins is built without a Core sibling.
+    if(CORE_ENGINE_DIR)
+        # CORE_ENGINE_DIR is Core/src/engine; the check wants all of
+        # Core/src (some consumers live outside engine/, e.g. app/core.cpp).
+        get_filename_component(CORE_SRC_DIR "${CORE_ENGINE_DIR}/../.."
+                               ABSOLUTE)
+        add_test(NAME template.hook_tags_drift
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_hook_tags.sh
+                         ${CORE_SRC_DIR})
+    endif()
+
+    # -- BasicGame behavior tests (tests/BasicGame/) --
+    # Required-field refusal + defaults, against a recording stub ctx.
+    add_executable(test_basic_game
+        tests/BasicGame/test_basic_game.cpp
+    )
+    target_include_directories(test_basic_game PRIVATE
+        ${ABI_INCLUDE_DIR}
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/shared/BasicGame"
+    )
+    target_compile_definitions(test_basic_game PRIVATE VERSION="test")
+
+    foreach(case
+            missing_required_refuses
+            missing_required_names_first
+            defaults_apply
+            overrides_win
+            extra_hooks_run)
+        add_test(NAME basic_game.${case}
+                 COMMAND test_basic_game ${case})
+    endforeach()
 endif()
 
-# Isaac Mod Sorter — needs Core engine/sort headers + yaml-cpp
+# Isaac Mod Sorter - needs Core engine/sort headers + yaml-cpp
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(YAMLCPP REQUIRED IMPORTED_TARGET yaml-cpp)
 
@@ -168,10 +238,10 @@ set_target_properties(IsaacModSorter PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
 )
 
-# Event Bus Viewer — v2 IPluginTool plugin.
+# Event Bus Viewer - v2 IPluginTool plugin.
 # Shows a Qt dialog listing recent EventBus activity. It reaches the host's
 # EventBus singleton through the executable's exported symbols (gamemodmanager is
-# linked with -rdynamic), so it intentionally does NOT link the engine — linking
+# linked with -rdynamic), so it intentionally does NOT link the engine - linking
 # the static engine would create a second, empty EventBus inside the plugin.
 find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
