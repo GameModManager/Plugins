@@ -1,0 +1,31 @@
+# Checked-in capability-id vocabulary (v3 P6).
+# One id per line. Lines starting with # are comments.
+# Must match Core's capability_manifest.cpp and (for functional ids) ABI's GMM_CAPID_*.
+# -- DATA capabilities --
+layout.mods
+layout.install
+game.native_files
+deploy.policy
+load_order.encoding
+saves.list
+plugins.database
+archives
+conflicts.scope
+catalog.icon
+catalog.masterlist
+catalog.sources
+ui.tabs
+# -- FUNCTIONAL capabilities --
+saves.parse
+saves.overlay
+preview.file
+animation.parse
+sort.provider
+tool
+installer.stage
+detection.validator
+event.subscribe
+ui.diagnostics
+ui.settings
+install.checker
+plugin.settings
