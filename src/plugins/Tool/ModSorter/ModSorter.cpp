@@ -86,6 +86,12 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
 
   g_provider->load_masterlist(bundled_masterlist);
 
+  // Declare this plugin's type up front so the engine's game_support
+  // ownership check (which runs during register_game below) sees it: a Tool
+  // never owns game support, regardless of registration order.
+  if (ctx->register_category)
+    ctx->register_category(ctx, "Tool");
+
   // Register the game this sort provider belongs to. v2's register_sort_provider
   // takes no game_id (unlike v1), so the engine scopes the provider to this
   // plugin's own game_id - which we set here. This mirrors the v1 call that
@@ -107,9 +113,6 @@ extern "C" void gmm_register_v2(GmmRegistrationCtxV2 *ctx) {
   info.version     = VERSION;
   info.description = "LOOT-style mod sorter for The Binding of Isaac: Rebirth";
   ctx->register_plugin(ctx, info);
-
-  if (ctx->register_category)
-    ctx->register_category(ctx, "Tool");
 
   // User-facing options (key:value pairs, rendered as editable rows in the
   // Plugins settings tab).
