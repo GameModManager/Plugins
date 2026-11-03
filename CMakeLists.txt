@@ -45,10 +45,12 @@ pkg_check_modules(LZ4 REQUIRED IMPORTED_TARGET liblz4)
 add_library(GMM_Gamebryo STATIC
     src/shared/Gamebryo/GamebryoSaveReader.cpp
     src/shared/Gamebryo/GamebryoSaveGame.cpp
+    src/shared/Gamebryo/GamebryoSaveAbi.cpp
     src/shared/Gamebryo/SkyrimSaveGame.cpp
     src/shared/Gamebryo/SkyrimSESaveGame.cpp
+    src/shared/Gamebryo/Fallout4SaveGame.cpp
 )
-target_include_directories(GMM_Gamebryo PUBLIC src/shared/Gamebryo)
+target_include_directories(GMM_Gamebryo PUBLIC src/shared/Gamebryo ${ABI_INCLUDE_DIR})
 target_link_libraries(GMM_Gamebryo PUBLIC PkgConfig::ZLIB PkgConfig::LZ4)
 
 function(add_game_plugin NAME)
@@ -79,6 +81,15 @@ target_include_directories(SkyrimSpecialEdition PRIVATE
 
 add_game_plugin(TheBindingOfIsaacRebirth
     src/plugins/GameSupport/TheBindingOfIsaacRebirth/TheBindingOfIsaacRebirth.cpp
+)
+
+add_game_plugin(Fallout4
+    src/plugins/GameSupport/Fallout4/Fallout4.cpp
+    src/plugins/GameSupport/Fallout4/Fallout4SaveParser.cpp
+)
+target_link_libraries(Fallout4 PRIVATE GMM_Gamebryo)
+target_include_directories(Fallout4 PRIVATE
+    src/plugins/GameSupport/Fallout4
 )
 
 add_game_plugin(FomodInstaller
@@ -224,6 +235,31 @@ if(GMM_BUILD_TESTS)
         add_test(NAME basic_game.${case}
                  COMMAND test_basic_game ${case})
     endforeach()
+
+    # -- Fallout 4 game plugin tests (tests/Fallout4/) --
+    # dlopen the BUILT Fallout4.so and assert the registration output
+    # (identity, knowledge hooks, order encoding, save parser) plus a
+    # synthetic-.fos parse through the registered parser. Depends on the
+    # Fallout4 target so the .so exists before the test runs.
+    add_executable(test_fallout4
+        tests/Fallout4/test_fallout4.cpp
+    )
+    target_include_directories(test_fallout4 PRIVATE
+        ${ABI_INCLUDE_DIR}
+    )
+    target_compile_definitions(test_fallout4 PRIVATE
+        GMM_FALLOUT4_PLUGIN_PATH="${CMAKE_BINARY_DIR}/plugins/Fallout4.so"
+    )
+    target_link_libraries(test_fallout4 PRIVATE ${CMAKE_DL_LIBS})
+    add_dependencies(test_fallout4 Fallout4)
+
+    foreach(case
+            registration
+            order_encoding
+            save_parse)
+        add_test(NAME fallout4.${case}
+                 COMMAND test_fallout4 ${case})
+    endforeach()
 endif()
 
 # Isaac Mod Sorter - needs Core engine/sort headers + yaml-cpp
@@ -269,7 +305,7 @@ set_target_properties(EventBusViewer PROPERTIES
 
 # Wine.json files shipped next to each game plugin (<game_id>/wine.json).
 # The UI reads them as "Recommended Wine Packages".
-foreach(GAME_ID SkyrimSpecialEdition TheBindingOfIsaacRebirth)
+foreach(GAME_ID SkyrimSpecialEdition TheBindingOfIsaacRebirth Fallout4)
     set(WINE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/GameSupport/${GAME_ID}/wine.json")
     if(EXISTS "${WINE_JSON}")
         configure_file(
